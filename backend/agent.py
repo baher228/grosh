@@ -495,6 +495,7 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
     start("match")
     if use_gemini:
         start("research")
+        savings, web_savings = [], []
         with ThreadPoolExecutor(max_workers=2) as executor:
             match_future = executor.submit(
                 _match_savings, transactions, categories, candidates, catalogue, True
@@ -512,7 +513,7 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
                     trace.append(research_entry)
                     if emit:
                         emit({"type": "step", **research_entry})
-                    savings.extend(web_savings)
+        savings = savings + web_savings
     else:
         savings = _match_savings(
             transactions, categories, candidates, catalogue, False
