@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #E9EEF3;
+  --color-sheet: #FBFCFD;
+  --color-ink: #17233D;
+  --color-ink-soft: #55607A;
+  --color-rule: #D3DAE3;
+  --color-marker: #F3E35A;
+  --color-pen: #C2362B;
+  --color-keep: #1D7348;
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Schibsted Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+html { background: var(--color-paper); color: var(--color-ink); -webkit-text-size-adjust: 100%; }
+body { font-family: var(--font-sans); min-height: 100dvh; }
+.num { font-variant-numeric: tabular-nums; }
+input, textarea, select { font-size: 16px; }
+
+* { scrollbar-width: thin; scrollbar-color: #A9B4C4 transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #A9B4C4; border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* highlighter stroke behind a statement line */
+.marked {
+  background-image: linear-gradient(100deg, transparent 0.4%, color-mix(in oklab, var(--color-marker) 85%, transparent) 1.2%, var(--color-marker) 50%, color-mix(in oklab, var(--color-marker) 80%, transparent) 98.6%, transparent 99.4%);
+  background-repeat: no-repeat;
+  background-size: 0% 72%;
+  background-position: 0 60%;
+  animation: mark 700ms cubic-bezier(.2,.7,.2,1) forwards;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes mark { to { background-size: 100% 72%; } }
+
+.sheet { background: var(--color-sheet); box-shadow: 0 1px 0 #C9D1DC, 0 18px 40px -24px rgba(23,35,61,.35); }
+.perf { background-image: radial-gradient(circle at 6px 6px, var(--color-paper) 4px, transparent 4.5px); background-size: 18px 12px; background-repeat: repeat-x; height: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .marked { animation: none; background-size: 100% 72%; }
+  * { transition: none !important; }
+}
+:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; border-radius: 4px; }
