@@ -53,9 +53,9 @@ export function Receipts() {
                 {READING.map((s, i) => {
                   const live = i === Math.min(2, Math.floor(tick / 6))
                   return (
-                    <li key={s} className={`flex items-center gap-3 ${i <= Math.floor(tick / 6) ? 'text-ink' : 'text-ink-soft/60'}`}>
-                      <span className={`grid size-6 place-items-center rounded-full border text-xs num ${live ? 'border-ink' : 'border-rule'}`}>
-                        {live ? <span className="size-2 animate-ping rounded-full bg-ink" /> : i + 1}
+                    <li key={s} className={`flex items-center gap-3 transition-colors duration-500 ${i <= Math.floor(tick / 6) ? 'text-ink' : 'text-ink-soft/60'}`}>
+                      <span className={`grid size-6 place-items-center rounded-full border text-xs num ${live ? 'border-transparent' : 'border-rule'}`}>
+                        {live ? <span className="spinner" aria-hidden /> : i + 1}
                       </span>{s}
                     </li>
                   )

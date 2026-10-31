@@ -24,9 +24,9 @@ function Progress({ events }: { events: StreamEvent[] }) {
         {STEPS.map(([key, label], i) => {
           const d = done.get(key); const live = started.has(key) && !d
           return (
-            <li key={key} className={`flex gap-3 transition-colors ${d || live ? 'text-ink' : 'text-ink-soft/60'}`}>
-              <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-xs num ${d ? (d.status === 'ok' ? 'border-keep bg-keep text-sheet' : 'border-pen text-pen') : live ? 'border-ink' : 'border-rule'}`}>
-                {d ? (d.status === 'ok' ? '✓' : '!') : live ? <span className="size-2 animate-ping rounded-full bg-ink" /> : i + 1}
+            <li key={key} className={`flex gap-3 transition-colors duration-500 ${d || live ? 'text-ink' : 'text-ink-soft/60'}`}>
+              <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-xs num ${d ? (d.status === 'ok' ? 'border-keep bg-keep text-sheet' : 'border-pen text-pen') : live ? 'border-transparent' : 'border-rule'}`}>
+                {d ? <span className="settle">{d.status === 'ok' ? '✓' : '!'}</span> : live ? <span className="spinner" aria-hidden /> : i + 1}
               </span>
               <div className="min-w-0">
                 <p>{d?.label || label}</p>
