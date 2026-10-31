@@ -34,12 +34,26 @@ export default function App() {
           <button onClick={() => { setA(null); setView('statement') }} className="font-display text-xl font-bold tracking-[-0.03em]">
             margin<span className="text-pen">.</span>
           </button>
-          <nav className="flex items-center gap-0.5 text-[15px] sm:gap-1 sm:text-base">
-            <button onClick={() => { if (view === 'statement') setA(null); setView('statement') }} className={`rounded-lg px-2 py-1.5 hover:text-ink sm:px-3 ${view === 'statement' ? 'text-ink' : 'text-ink-soft'}`}>{a && view === 'statement' ? 'New statement' : 'Statement'}</button>
-            <button onClick={() => setView('receipt')} className={`rounded-lg px-2 py-1.5 hover:text-ink sm:px-3 ${view === 'receipt' ? 'text-ink' : 'text-ink-soft'}`}>Receipt</button>
-            <button onClick={() => setWish(true)} className="relative ml-1 rounded-lg border border-rule bg-sheet px-3 py-1.5 sm:px-3.5 hover:border-ink">
-              Wishlist
-              {unread > 0 && <span className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full bg-pen text-[11px] font-semibold text-white num">{unread}</span>}
+          <nav className="flex items-center gap-2 sm:gap-3">
+            {a && view === 'statement' && (
+              <button onClick={() => setA(null)} className="hidden rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink sm:block">New statement</button>
+            )}
+            <div role="tablist" aria-label="Mode" className="flex rounded-full border border-rule bg-sheet p-0.5 text-sm shadow-[0_1px_0_rgba(23,35,61,.04)]">
+              {([['statement', 'Statement'], ['receipt', 'Receipt']] as const).map(([v, label]) => (
+                <button key={v} role="tab" aria-selected={view === v}
+                  onClick={() => { if (v === 'statement' && view === 'statement') setA(null); setView(v) }}
+                  className={`rounded-full px-3.5 py-1.5 font-medium transition-colors sm:px-4 ${view === v ? 'bg-ink text-sheet' : 'text-ink-soft hover:text-ink'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setWish(true)} aria-label={`Wishlist${unread ? `, ${unread} new` : ''}`}
+              className="relative grid size-9 place-items-center rounded-full border border-rule bg-sheet hover:border-ink sm:flex sm:h-9 sm:w-auto sm:gap-2 sm:rounded-full sm:px-4">
+              <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2Z" />
+              </svg>
+              <span className="hidden text-sm font-medium sm:inline">Wishlist</span>
+              {unread > 0 && <span className="absolute -top-1 -right-1 grid size-[18px] place-items-center rounded-full bg-pen text-[10px] font-semibold text-white num ring-2 ring-paper">{unread}</span>}
             </button>
           </nav>
         </div>
