@@ -79,7 +79,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
               <ul className="mt-2 space-y-2">
                 {notices.map(n => (
                   <li key={n.id} className="notice rounded-xl border border-ink bg-sheet p-3.5">
-                    <p className="flex items-center gap-2 text-sm text-ink-soft"><span className="size-1.5 rounded-full bg-pen" />For your “{n.item}”{n.deal.tags?.includes('web') && <span className="rounded-full border border-rule px-1.5 text-xs">live web</span>}</p>
+                    <p className="flex items-center gap-2 text-sm text-ink-soft"><span className="size-1.5 rounded-full bg-pen" />For your “{n.item}”{n.deal.tags?.includes('web') && <span className="rounded-full border border-rule px-1.5 text-xs">web lookup</span>}</p>
                     <p className="font-medium">{n.deal.brand}: {n.deal.offer}</p>
                     <p className="mt-1 text-sm text-ink-soft">{n.reason}</p>
                     <a className="mt-2 inline-block text-sm underline underline-offset-4" href={n.deal.url} target="_blank" rel="noreferrer">See deal on {n.deal.provider}</a>
