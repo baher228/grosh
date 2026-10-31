@@ -183,9 +183,25 @@ def apply(analysis):
     if not isinstance(plan, dict):
         plan = {}
         result["plan"] = plan
-    monthly = round(sum(float(saving.get("est_monthly_saving") or 0) for saving in kept if isinstance(saving, dict)), 2)
+    verified = []
+    unconfirmed = []
+    for saving in kept:
+        if not isinstance(saving, dict):
+            continue
+        confidence = saving.get("confidence")
+        if confidence is None:
+            deal = saving.get("deal") if isinstance(saving.get("deal"), dict) else {}
+            tags = deal.get("tags") if isinstance(deal.get("tags"), list) else []
+            confidence = "unconfirmed" if "web" in tags else "verified"
+        amount = float(saving.get("est_monthly_saving") or 0)
+        if confidence == "unconfirmed":
+            unconfirmed.append(amount)
+        else:
+            verified.append(amount)
+    monthly = round(sum(verified), 2)
     plan["monthly_total"] = monthly
     plan["yearly_total"] = round(monthly * 12, 2)
+    plan["unconfirmed_monthly"] = round(sum(unconfirmed), 2)
     if dropped:
         steps = plan.get("steps")
         if isinstance(steps, list):
