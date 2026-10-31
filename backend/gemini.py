@@ -172,7 +172,7 @@ def categorise_transactions(transactions, categories):
     )
 
 
-def choose_savings(transactions, categories, deals):
+def choose_savings(transactions, categories, deals, memory=""):
     numbered = [
         {"i": index, "date": row["date"], "merchant": row["merchant"],
          "amount": row["amount"], "category": row["category"]}
@@ -191,10 +191,11 @@ def choose_savings(transactions, categories, deals):
         + json.dumps(categories)
         + " Deals: "
         + json.dumps(deals, ensure_ascii=False)
+        + (f"\n\n{memory}" if memory else "")
     )
 
 
-def research_discounts(merchants):
+def research_discounts(merchants, memory=""):
     if not client:
         raise RuntimeError("Gemini API key is not configured")
     prompt = (
@@ -207,6 +208,7 @@ def research_discounts(merchants):
         "is verified. evidence_ids must be copied from the supplied transactions. "
         "Transactions: "
         + json.dumps(merchants, ensure_ascii=False)
+        + (f"\n\n{memory}" if memory else "")
     )
     response = _generate_content(
         model=MODEL,

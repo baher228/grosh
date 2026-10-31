@@ -1,17 +1,93 @@
 import { useState } from 'react'
+import type { MouseEvent } from 'react'
 import { gbp } from '../api'
-import type { Analysis } from '../types'
+import type { Analysis, FeedbackKind, FeedbackRule, Saving } from '../types'
 
 const SHADES = ['#17233D', '#3B4A6B', '#65739A', '#93A0BF', '#BDC6DA', '#DCE2EC']
 
-export function Plan({ a, active, onPick }: { a: Analysis; active: string | null; onPick: (id: string | null) => void }) {
+function savingMerchants(a: Analysis, saving: Saving) {
+  const evidence = saving.evidence.map(line => line.toLowerCase())
+  const seen = new Set<string>()
+  return a.transactions.flatMap(transaction => {
+    const merchant = transaction.merchant.trim()
+    const folded = merchant.toLowerCase()
+    if (!merchant || seen.has(folded) || !evidence.some(line => line.includes(folded))) return []
+    seen.add(folded)
+    return [merchant]
+  })
+}
+
+const FEEDBACK_CHOICES: { kind: FeedbackKind; label: string }[] = [
+  { kind: 'keep', label: "I'll keep it" },
+  { kind: 'have', label: 'Already have it' },
+  { kind: 'not_relevant', label: 'Not relevant' },
+]
+
+const KIND_LABELS: Record<FeedbackKind, string> = {
+  keep: 'Keeping',
+  have: 'Already have',
+  not_relevant: 'Not relevant',
+}
+
+export function Plan({
+  a, active, onPick, rules, onFeedback, onForget,
+}: {
+  a: Analysis
+  active: string | null
+  onPick: (id: string | null) => void
+  rules: FeedbackRule[]
+  onFeedback: (kind: FeedbackKind, saving: Saving, merchants: string[], note: string | null) => Promise<void>
+  onForget: (id: string) => Promise<void>
+}) {
   const [showTrace, setShowTrace] = useState(false)
+  const [feedbackFor, setFeedbackFor] = useState<string | null>(null)
+  const [feedbackKind, setFeedbackKind] = useState<FeedbackKind | null>(null)
+  const [feedbackNote, setFeedbackNote] = useState('')
+  const [feedbackBusy, setFeedbackBusy] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [forgetBusy, setForgetBusy] = useState<string | null>(null)
+  const [forgetError, setForgetError] = useState<string | null>(null)
   const cats = a.categories.filter(c => c.name !== 'Income' && c.total > 0).sort((x, y) => y.total - x.total)
   const top = cats.slice(0, 5)
   const rest = cats.slice(5).reduce((s, c) => s + c.total, 0)
   const bars = rest > 0 ? [...top, { name: 'Everything else', total: rest, share: 0, count: 0 }] : top
   const sum = bars.reduce((s, c) => s + c.total, 0) || 1
   const rejected = a.trace.filter(t => t.status === 'rejected').length
+
+  const closeFeedback = () => {
+    setFeedbackFor(null)
+    setFeedbackKind(null)
+    setFeedbackNote('')
+    setFeedbackError(null)
+  }
+
+  const saveFeedback = async (event: MouseEvent, saving: Saving) => {
+    event.stopPropagation()
+    if (!feedbackKind) return
+    setFeedbackBusy(true)
+    setFeedbackError(null)
+    try {
+      await onFeedback(feedbackKind, saving, savingMerchants(a, saving), feedbackNote.trim() || null)
+      closeFeedback()
+    } catch {
+      setFeedbackError('Could not save your feedback. Please try again.')
+    } finally {
+      setFeedbackBusy(false)
+    }
+  }
+
+  const forget = async (event: MouseEvent, id: string) => {
+    event.stopPropagation()
+    setForgetBusy(id)
+    setForgetError(null)
+    try {
+      await onForget(id)
+    } catch {
+      setForgetError('Could not forget this rule. Please try again.')
+    } finally {
+      setForgetBusy(null)
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -67,11 +143,83 @@ export function Plan({ a, active, onPick }: { a: Analysis; active: string | null
                       className="inline-block rounded-lg bg-ink px-4 py-2 font-medium text-sheet">Open the {s.deal.brand} offer</a>
                   </div>
                 )}
+                {feedbackFor === s.id ? (
+                  <div
+                    className="mt-3 border-t border-rule/70 pt-3"
+                    onClick={event => event.stopPropagation()}
+                    onKeyDown={event => {
+                      if (event.key === 'Escape') {
+                        event.stopPropagation()
+                        closeFeedback()
+                      }
+                    }}
+                  >
+                    <div className="grid grid-cols-3 gap-1 rounded-lg border border-rule bg-paper/50 p-1">
+                      {FEEDBACK_CHOICES.map(choice => (
+                        <button key={choice.kind} type="button" aria-pressed={feedbackKind === choice.kind}
+                          onClick={event => { event.stopPropagation(); setFeedbackKind(choice.kind); setFeedbackError(null) }}
+                          className={`min-w-0 rounded-md px-1.5 py-2 text-[11px] leading-tight transition-colors sm:text-xs ${feedbackKind === choice.kind ? 'bg-ink text-sheet' : 'text-ink-soft hover:bg-sheet hover:text-ink'}`}>
+                          {choice.label}
+                        </button>
+                      ))}
+                    </div>
+                    <input value={feedbackNote} onChange={event => setFeedbackNote(event.target.value)}
+                      onClick={event => event.stopPropagation()} type="text"
+                      placeholder="Anything grosh should know? (optional)"
+                      className="mt-2 w-full min-w-0 rounded-lg border border-rule bg-sheet px-3 py-2 text-base" />
+                    {feedbackError && <p className="mt-2 text-sm text-pen">{feedbackError}</p>}
+                    <div className="mt-2 flex justify-end gap-3">
+                      <button type="button" onClick={event => { event.stopPropagation(); closeFeedback() }}
+                        className="px-2 py-1.5 text-sm text-ink-soft hover:text-ink">Cancel</button>
+                      <button type="button" disabled={!feedbackKind || feedbackBusy}
+                        onClick={event => { void saveFeedback(event, s) }}
+                        className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-sheet disabled:opacity-45">
+                        {feedbackBusy ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex justify-end border-t border-rule/60 pt-2">
+                    <button type="button" onClick={event => {
+                      event.stopPropagation()
+                      setFeedbackFor(s.id)
+                      setFeedbackKind(null)
+                      setFeedbackNote('')
+                      setFeedbackError(null)
+                    }} className="text-sm text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink">
+                      Not for me
+                    </button>
+                  </div>
+                )}
               </article>
             </li>
           ))}
         </ul>
         {a.savings.length === 0 && <p className="mt-4 text-ink-soft">No student deal beats what you paid this month. That's a good sign.</p>}
+        {rules.length > 0 && (
+          <section className="mt-6 border-t border-rule/70 pt-5">
+            <h3 className="font-display text-xl font-semibold tracking-tight">grosh remembers</h3>
+            <p className="mt-1 text-sm text-ink-soft">grosh skips these in every check, including Gemini's suggestions.</p>
+            <ul className="mt-2 divide-y divide-rule/50">
+              {rules.map(rule => (
+                <li key={rule.id} className="flex min-w-0 items-start gap-3 py-2">
+                  <p className="min-w-0 flex-1 break-words text-sm">
+                    <span className="text-ink-soft">{KIND_LABELS[rule.kind]}</span>
+                    <span className="mx-1">·</span>
+                    <span>{rule.title}</span>
+                    {rule.note && <span className="text-ink-soft"> · {rule.note}</span>}
+                  </p>
+                  <button type="button" disabled={forgetBusy === rule.id}
+                    onClick={event => { void forget(event, rule.id) }}
+                    className="shrink-0 py-0.5 text-sm text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50">
+                    Forget
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {forgetError && <p className="mt-1 text-sm text-pen">{forgetError}</p>}
+          </section>
+        )}
       </div>
 
       {a.plan.steps.length > 0 && (

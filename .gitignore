@@ -8,3 +8,4 @@ dist/
 **/dist/
 .env
 **/.env
+/backend/data/feedback.json

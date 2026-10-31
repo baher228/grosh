@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, type StreamEvent } from './api'
-import type { Analysis, Notice } from './types'
+import type { Analysis, FeedbackKind, FeedbackRule, Notice, Saving } from './types'
 import { Intake } from './components/Intake'
 import { Statement } from './components/Statement'
 import { Plan } from './components/Plan'
@@ -9,6 +9,8 @@ import { Receipts } from './components/Receipts'
 
 export default function App() {
   const [a, setA] = useState<Analysis | null>(null)
+  const [raw, setRaw] = useState<Analysis | null>(null)
+  const [rules, setRules] = useState<FeedbackRule[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
@@ -18,30 +20,59 @@ export default function App() {
 
   const [progress, setProgress] = useState<StreamEvent[]>([])
   const onEvent = (e: StreamEvent) => setProgress(p => [...p, e])
+  useEffect(() => {
+    let current = true
+    api.feedback().then(value => { if (current) setRules(value) }).catch(() => {})
+    return () => { current = false }
+  }, [])
+
+  const applyFeedback = async (value: Analysis) => {
+    try { setA(await api.applyFeedback(value)) } catch { setA(value) }
+  }
+
   const run = async (start: () => Promise<Analysis>) => {
     setBusy(true); setError(null); setProgress([])
     const p = start()
-    try { setA(await p); setActive(null); window.scrollTo({ top: 0 }) }
+    try {
+      const result = await p
+      setRaw(result)
+      await applyFeedback(result)
+      setActive(null)
+      window.scrollTo({ top: 0 })
+    }
     catch (e) { setError(`${(e as Error).message}. Try a CSV export from your banking app, or the sample statement.`) }
     finally { setBusy(false) }
   }
+
+  const addFeedback = async (kind: FeedbackKind, saving: Saving, merchants: string[], note: string | null) => {
+    const rule = await api.addFeedback(kind, saving, merchants, note)
+    setRules(current => [...current, rule])
+    if (raw) await applyFeedback(raw)
+  }
+
+  const forgetFeedback = async (id: string) => {
+    await api.delFeedback(id)
+    setRules(current => current.filter(rule => rule.id !== id))
+    if (raw) await applyFeedback(raw)
+  }
+
   const unread = notices.filter(n => !n.read).length
 
   return (
     <div className="min-h-dvh" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="sticky top-0 z-30 border-b border-rule/70 bg-paper/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3.5 sm:px-5">
-          <button onClick={() => { setA(null); setView('statement') }} aria-label="grosh home" className="shrink-0">
+          <button onClick={() => { setA(null); setRaw(null); setView('statement') }} aria-label="grosh home" className="shrink-0">
             <img src="/grosh-logo.png" alt="grosh" width={1086} height={231} className="h-[18px] w-auto sm:h-[22px]" />
           </button>
           <nav className="flex items-center gap-2 sm:gap-3">
             {a && view === 'statement' && (
-              <button onClick={() => setA(null)} className="hidden rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink sm:block">New statement</button>
+              <button onClick={() => { setA(null); setRaw(null) }} className="hidden rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink sm:block">New statement</button>
             )}
             <div role="tablist" aria-label="Mode" className="flex rounded-full border border-rule bg-sheet p-0.5 text-sm shadow-[0_1px_0_rgba(23,35,61,.04)]">
               {([['statement', 'Statement'], ['receipt', 'Receipt']] as const).map(([v, label]) => (
                 <button key={v} role="tab" aria-selected={view === v}
-                  onClick={() => { if (v === 'statement' && view === 'statement') setA(null); setView(v) }}
+                  onClick={() => { if (v === 'statement' && view === 'statement') { setA(null); setRaw(null) } setView(v) }}
                   className={`rounded-full px-3.5 py-1.5 font-medium transition-colors sm:px-4 ${view === v ? 'bg-ink text-sheet' : 'text-ink-soft hover:text-ink'}`}>
                   {label}
                 </button>
@@ -64,7 +95,9 @@ export default function App() {
       ) : (
         <main className="mx-auto grid max-w-6xl gap-10 px-5 pt-8 pb-20 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-14 md:pt-12">
           <div className="order-2 md:order-1"><Statement a={a} active={active} onPick={setActive} /></div>
-          <div className="order-1 md:order-2 md:sticky md:top-20 md:self-start"><Plan a={a} active={active} onPick={setActive} /></div>
+          <div className="order-1 md:order-2 md:sticky md:top-20 md:self-start">
+            <Plan a={a} active={active} onPick={setActive} rules={rules} onFeedback={addFeedback} onForget={forgetFeedback} />
+          </div>
         </main>
       )}
 

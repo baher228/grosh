@@ -5,6 +5,7 @@ import mimetypes
 import queue
 import threading
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ from starlette.responses import StreamingResponse
 
 import gemini
 import receipt
+import feedback
 from agent import analyze
 from store import (
     add_item,
@@ -54,6 +56,13 @@ app.add_middleware(
 class WishlistRequest(BaseModel):
     item: str = Field(min_length=1)
     max_price: float | None = None
+
+
+class FeedbackRequest(BaseModel):
+    kind: Literal["keep", "have", "not_relevant"]
+    saving: dict
+    merchants: list[str] = Field(default_factory=list)
+    note: str | None = None
 
 
 def _sample_analysis():
@@ -267,6 +276,31 @@ async def analyze_upload_stream(
         data, filename, file.content_type or "application/octet-stream",
         university, notes,
     )
+
+
+@app.get("/api/feedback")
+def get_feedback():
+    return feedback.list_rules()
+
+
+@app.post("/api/feedback")
+def create_feedback(body: FeedbackRequest):
+    return feedback.add_rule(
+        body.kind, body.saving, body.merchants, body.note
+    )
+
+
+@app.delete("/api/feedback/{rule_id}")
+def delete_feedback(rule_id: str):
+    deleted = feedback.delete_rule(rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Feedback rule not found")
+    return deleted
+
+
+@app.post("/api/feedback/apply")
+def apply_feedback(body: dict):
+    return feedback.apply(body)
 
 
 @app.get("/api/wishlist")

@@ -66,3 +66,11 @@ Receipt response:
 }
 Savings are computed from valid cheaper swaps only; checks compare the sum of item prices minus discounts with the printed total.
 GET /api/health -> {"ok":true,"gemini":bool,"model":str}
+
+Feedback:
+GET    /api/feedback -> [{id, kind, note, title, category, deal, merchants, created_at}]
+POST   /api/feedback JSON {kind:"keep"|"have"|"not_relevant", saving:Saving, merchants:[str], note?:str|null} -> saved rule
+DELETE /api/feedback/{id} -> deleted rule
+POST   /api/feedback/apply JSON body = Analysis -> filtered Analysis copy with updated plan totals, optional remembered entries, and a memory trace step
+
+Analysis endpoints return the unfiltered analysis. The client keeps that raw result and calls /api/feedback/apply for display, so forgetting a rule restores the original suggestions. Feedback rules are included in Gemini's matching and research prompts; merchants from "keep" and "have" rules are excluded from research targets.

@@ -1,4 +1,4 @@
-import type { Analysis, Notice, Receipt, TraceStep, WishItem } from './types'
+import type { Analysis, FeedbackKind, FeedbackRule, Notice, Receipt, Saving, TraceStep, WishItem } from './types'
 
 export type StreamEvent =
   | { type: 'start'; step: string; label: string }
@@ -54,6 +54,13 @@ export const api = {
     return fetch('/api/receipt', { method: 'POST', body: fd }).then(j<Receipt>)
   },
   receiptSample: () => fetch('/api/receipt/sample').then(j<Receipt>),
+  feedback: () => fetch('/api/feedback').then(j<FeedbackRule[]>),
+  addFeedback: (kind: FeedbackKind, saving: Saving, merchants: string[], note?: string | null) =>
+    fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, saving, merchants, note }) }).then(j<FeedbackRule>),
+  delFeedback: (id: string) =>
+    fetch(`/api/feedback/${id}`, { method: 'DELETE' }).then(j<FeedbackRule>),
+  applyFeedback: (analysis: Analysis) =>
+    fetch('/api/feedback/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(analysis) }).then(j<Analysis>),
   wishDemo: () => fetch('/api/wishlist/demo', { method: 'POST' }).then(j<WishItem[]>),
   wishlist: () => fetch('/api/wishlist').then(j<WishItem[]>),
   addWish: (item: string, max_price: number | null) =>

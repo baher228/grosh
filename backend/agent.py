@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import date
 
 import gemini
+import feedback
 from deals import deals_for_transactions, load_deals
 
 CATEGORIES = [
@@ -248,7 +249,11 @@ def analyze(file_bytes, filename, mime_type, university=None, notes=None, emit=N
         return result
 
 
-def _research_targets(transactions, catalogue):
+def _research_targets(transactions, catalogue, excluded_merchants=None):
+    excluded_merchants = {
+        str(merchant).casefold()
+        for merchant in excluded_merchants or []
+    }
     catalogue_brands = [
         deal["brand"].casefold()
         for deal in catalogue
@@ -271,7 +276,7 @@ def _research_targets(transactions, catalogue):
     targets = []
     for group in groups.values():
         merchant = group["merchant"].casefold()
-        if any(brand in merchant for brand in catalogue_brands):
+        if merchant in excluded_merchants or any(brand in merchant for brand in catalogue_brands):
             continue
         group["spend"] = round(group["spend"], 2)
         group["category"] = max(
@@ -288,7 +293,7 @@ def _research_targets(transactions, catalogue):
 def _match_savings(transactions, categories, candidates, catalogue, use_gemini):
     if use_gemini and candidates:
         selected = gemini.choose_savings(
-            transactions, categories, candidates
+            transactions, categories, candidates, memory=feedback.prompt_block()
         ).get("savings", [])
         by_id = {deal["id"]: deal for deal in candidates}
         savings = []
@@ -326,7 +331,9 @@ def _research_savings(targets, transactions):
             detail = "No unsaved non-Income merchants to research"
             web_savings = []
         else:
-            research, domains = gemini.research_discounts(targets)
+            research, domains = gemini.research_discounts(
+                targets, memory=feedback.prompt_block()
+            )
             web_savings = _web_savings(research, targets, transactions)
             source_detail = ", ".join(domains) if domains else "no grounding sources reported"
             detail = f"{len(web_savings)} web savings proposed; grounding sources: {source_detail}"
@@ -470,7 +477,19 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
     categories, income, spent = _aggregate(transactions)
     for tx in transactions:
         tx.pop("_income", None)
-    targets = _research_targets(transactions, catalogue) if use_gemini else []
+    if use_gemini:
+        rules = feedback.list_rules()
+        excluded_merchants = [
+            merchant
+            for rule in rules
+            if rule.get("kind") in {"keep", "have"}
+            for merchant in rule.get("merchants", [])
+        ]
+        targets = _research_targets(
+            transactions, catalogue, excluded_merchants
+        )
+    else:
+        targets = []
     candidates = deals_for_transactions(transactions, catalogue)
     match_started = time.perf_counter()
     start("match")

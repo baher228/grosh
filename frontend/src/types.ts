@@ -1,5 +1,10 @@
 export type Deal = { id: string; provider: string; brand: string; category?: string; offer: string; discount_pct?: number | null; url: string; tags?: string[] }
 export type Txn = { date: string; merchant: string; description?: string; amount: number; category: string }
+export type FeedbackKind = 'keep' | 'have' | 'not_relevant'
+export type FeedbackRule = {
+  id: string; kind: FeedbackKind; note: string | null; title: string; category: string
+  deal: { id: string; brand: string; provider: string }; merchants: string[]; created_at: string
+}
 export type Saving = {
   id: string; title: string; category: string; current_spend: number; est_monthly_saving: number
   deal: Deal; evidence: string[]; verified: boolean; verification_note: string; why: string
@@ -13,6 +18,7 @@ export type Analysis = {
   savings: Saving[]
   plan: { headline: string; monthly_total: number; yearly_total: number; steps: string[] }
   trace: TraceStep[]
+  remembered?: { rule_id: string; kind: FeedbackKind; title: string }[]
 }
 export type WishItem = { id: string; item: string; max_price: number | null; created_at: string; matches: Deal[] }
 export type Notice = { id: string; wishlist_id: string; item: string; deal: Deal; reason: string; created_at: string; read: boolean }
