@@ -10,20 +10,20 @@ BASE = "https://www.studentbeans.com/student-discount/uk/"
 CATEGORY_WORDS = [
     (("takeaway", "fast food", "delivery"), "Takeaway/Delivery"),
     (("coffee",), "Coffee"),
-    (("food", "drink", "restaurant", "eating"), "Eating out"),
-    (("grocer", "supermarket"), "Groceries"),
-    (("travel", "train", "coach", "bus", "car", "flight", "hotel"), "Transport"),
-    (("phone", "mobile", "broadband", "utilit", "sim", "energy"), "Bills/Phone"),
-    (("audio", "music", "stream", "subscription", "software", "magazine", "news"), "Subscriptions"),
-    (("computer", "laptop", "tablet", "electronic", "tech", "gaming"), "Tech"),
-    (("cinema", "entertainment", "experience", "ticket", "event", "fitness", "gym", "health"), "Entertainment"),
+    (("food", "drink", "restaurants?", "eating"), "Eating out"),
+    (("grocer(y|ies)", "supermarkets?"), "Groceries"),
+    (("tech", "computers?", "laptops?", "tablets?", "electronics?", "gaming", "audio"), "Tech"),
+    (("phones?", "sim", "broadband", "internet", "utilities", "energy"), "Bills/Phone"),
+    (("travel", "trains?", "rail", "coach(es)?", "bus", "car hire", "flights?", "hotels?", "hostels?"), "Transport"),
+    (("music", "streaming", "subscriptions?", "software", "magazines?", "news"), "Subscriptions"),
+    (("cinema", "entertainment", "experiences?", "tickets?", "events?", "fitness", "gyms?", "days out"), "Entertainment"),
 ]
 
 
 def _category(name):
     low = name.casefold()
     for words, mapped in CATEGORY_WORDS:
-        if any(w in low for w in words):
+        if any(re.search(rf"\b{w}\b", low) for w in words):
             return mapped
     return "Shopping/Clothes"
 
