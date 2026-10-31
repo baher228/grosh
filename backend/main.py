@@ -4,6 +4,8 @@ import logging
 import mimetypes
 import queue
 import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -80,9 +82,14 @@ def _warm_sample_cache():
         if CACHE.exists():
             return
         path = DATA / "sample_statement.csv"
+        started = time.perf_counter()
         result = analyze(path.read_bytes(), path.name, "text/csv", use_gemini=True)
         if result.get("source") != "gemini":
             return
+        result["replay"] = {
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }
         temporary = CACHE.with_name(f".{CACHE.name}.tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(CACHE)

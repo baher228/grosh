@@ -6,6 +6,5 @@ __pycache__/
 **/__pycache__/
 dist/
 **/dist/
-.env
-**/.env
 /backend/data/feedback.json
+config.bat
