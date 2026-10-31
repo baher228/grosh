@@ -77,25 +77,70 @@ def available():
     return client is not None
 
 
-def ask_json(prompt, parts=None, model=None):
+def _thinking_config(model, budget=False):
+    if budget:
+        thinking = 0 if "flash" in model.lower() else 512
+        return types.ThinkingConfig(thinking_budget=thinking)
+    return types.ThinkingConfig(thinking_level="low")
+
+
+def _thinking_rejected(error):
+    message = str(error).lower()
+    return "thinking" in message and any(
+        phrase in message
+        for phrase in ("unsupported", "not supported", "invalid", "unknown", "not allowed")
+    )
+
+
+def _generate_content(model, contents, response_mime_type=None, tools=None):
     if not client:
         raise RuntimeError("Gemini API key is not configured")
+    config = {}
+    if response_mime_type:
+        config["response_mime_type"] = response_mime_type
+    if tools:
+        config["tools"] = tools
+    try:
+        config["thinking_config"] = _thinking_config(model)
+    except (AttributeError, TypeError, ValueError):
+        config["thinking_config"] = _thinking_config(model, budget=True)
+    try:
+        return client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(**config),
+        )
+    except Exception as error:
+        if not _thinking_rejected(error):
+            raise
+        logger.warning("Gemini model %s rejected low thinking; retrying with budget", model)
+        config["thinking_config"] = _thinking_config(model, budget=True)
+        return client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(**config),
+        )
+
+
+def ask_json(prompt, parts=None, model=None):
     contents = ([*parts, prompt] if parts else prompt)
-    response = client.models.generate_content(
+    response = _generate_content(
         model=model or MODEL,
         contents=contents,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
+        response_mime_type="application/json",
     )
     return json.loads(response.text or "{}")
 
 
-def extract_statement(file_bytes, mime_type):
+def extract_statement(file_bytes, mime_type, categories):
     part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
     return ask_json(
         'Extract bank transactions from this statement. Return JSON only: '
         '{"transactions":[{"date":"YYYY-MM-DD","merchant":"short merchant",'
         '"description":"original description","amount":12.34,"category":"Other"}]}. '
-        "Amounts must be positive numeric values. Preserve dates and do not invent transactions.",
+        "Assign each transaction exactly one category from: "
+        + ", ".join(categories)
+        + ". Amounts must be positive numeric values. Preserve dates and do not invent transactions.",
         [part],
     )
 
@@ -147,12 +192,10 @@ def research_discounts(merchants):
         "Transactions: "
         + json.dumps(merchants, ensure_ascii=False)
     )
-    response = client.models.generate_content(
+    response = _generate_content(
         model=MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-        ),
+        tools=[types.Tool(google_search=types.GoogleSearch())],
     )
     text = response.text or ""
     text = re.sub(r"```(?:json)?", "", text, flags=re.I).replace("```", "")
@@ -180,7 +223,8 @@ def critique_savings(transactions, savings):
         "if all claims are supported. Transactions: "
         + json.dumps(transactions, ensure_ascii=False)
         + " Proposed savings: "
-        + json.dumps(savings, ensure_ascii=False)
+        + json.dumps(savings, ensure_ascii=False),
+        model=FAST_MODEL,
     )
 
 

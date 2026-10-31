@@ -3,6 +3,7 @@ import io
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from datetime import date
 
@@ -14,6 +15,15 @@ CATEGORIES = [
     "Shopping/Clothes", "Tech", "Entertainment", "Coffee", "Bills/Phone", "Rent",
     "Income", "Other",
 ]
+
+STEP_LABELS = {
+    "extract": "Reading your statement",
+    "categorise": "Sorting spending into categories",
+    "match": "Matching student deals",
+    "research": "Searching the web for live student offers",
+    "verify": "Checking every claim against your transactions",
+    "plan": "Writing your plan",
+}
 
 RULES = [
     ("Income", ("student loan", "maintenance loan", "salary", "wages", "payroll", "income")),
@@ -103,6 +113,7 @@ def _normalise_transactions(items):
             "merchant": merchant[:60],
             "description": description[:160],
             "amount": round(amount, 2),
+            "_category": str(row.get("category") or ""),
             "_income": str(row.get("category", "")).lower() == "income",
         })
     return output
@@ -205,52 +216,133 @@ def _fallback_plan(total):
     }
 
 
-def analyze(file_bytes, filename, mime_type, university=None, notes=None):
+def analyze(file_bytes, filename, mime_type, university=None, notes=None, emit=None, use_gemini=None):
     is_csv = filename.lower().endswith(".csv") or mime_type == "text/csv"
     catalogue = load_deals()
+    use_gemini = gemini.available() if use_gemini is None else use_gemini
+    if not use_gemini:
+        return _run(
+            file_bytes, filename, is_csv, mime_type, university, notes,
+            catalogue, use_gemini=False, emit=emit,
+        )
     try:
-        return _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, use_gemini=gemini.available())
+        return _run(
+            file_bytes, filename, is_csv, mime_type, university, notes,
+            catalogue, use_gemini=True, emit=emit,
+        )
     except Exception as error:
-        result = _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, use_gemini=False)
-        result["trace"].insert(0, {
+        failure = {
             "step": "extract",
             "label": "Gemini call failed, used offline rules",
             "status": "fallback",
             "detail": str(error)[:160],
             "ms": 0,
-        })
+        }
+        if emit:
+            emit({"type": "step", **failure})
+        result = _run(
+            file_bytes, filename, is_csv, mime_type, university, notes,
+            catalogue, use_gemini=False, emit=emit,
+        )
+        result["trace"].insert(0, failure)
         return result
 
 
-def _research_targets(transactions, savings):
-    saved_brands = [
-        saving["deal"]["brand"].lower()
-        for saving in savings
-        if saving.get("deal") and saving["deal"].get("id") in {
-            deal["id"] for deal in load_deals()
-        }
+def _research_targets(transactions, catalogue):
+    catalogue_brands = [
+        deal["brand"].casefold()
+        for deal in catalogue
+        if deal.get("brand")
     ]
     groups = {}
     for index, transaction in enumerate(transactions):
         if transaction["category"] == "Income":
             continue
-        key = (transaction["merchant"].casefold(), transaction["category"])
+        key = transaction["merchant"].casefold()
         group = groups.setdefault(key, {
             "merchant": transaction["merchant"],
-            "category": transaction["category"],
             "spend": 0.0,
             "evidence_ids": [],
+            "category_spend": defaultdict(float),
         })
         group["spend"] += transaction["amount"]
         group["evidence_ids"].append(index)
+        group["category_spend"][transaction["category"]] += transaction["amount"]
     targets = []
     for group in groups.values():
-        merchant = group["merchant"].lower()
-        if any(brand in merchant or merchant in brand for brand in saved_brands):
+        merchant = group["merchant"].casefold()
+        if any(brand in merchant for brand in catalogue_brands):
             continue
         group["spend"] = round(group["spend"], 2)
+        group["category"] = max(
+            group["category_spend"],
+            key=lambda category: (group["category_spend"][category], category),
+        )
         targets.append(group)
-    return sorted(targets, key=lambda row: row["spend"], reverse=True)[:3]
+    return sorted(
+        targets,
+        key=lambda row: (-row["spend"], row["merchant"].casefold()),
+    )[:3]
+
+
+def _match_savings(transactions, categories, candidates, catalogue, use_gemini):
+    if use_gemini and candidates:
+        selected = gemini.choose_savings(
+            transactions, categories, candidates
+        ).get("savings", [])
+        by_id = {deal["id"]: deal for deal in candidates}
+        savings = []
+        for row in selected[:8]:
+            deal = by_id.get(row.get("deal_id"))
+            if not deal:
+                continue
+            evidence_ids = row.get("evidence_ids")
+            evidence_ids = evidence_ids if isinstance(evidence_ids, list) else []
+            savings.append({
+                "id": deal["id"],
+                "title": str(row.get("title") or f"Save with {deal['brand']} student offer"),
+                "category": str(row.get("category") or deal["category"]),
+                "current_spend": row.get("current_spend", 0),
+                "est_monthly_saving": row.get("est_monthly_saving", 0),
+                "deal": deal,
+                "evidence": [
+                    _line(transactions[index])
+                    for index in evidence_ids
+                    if type(index) is int and 0 <= index < len(transactions)
+                ],
+                "evidence_ids": evidence_ids,
+                "verified": False,
+                "verification_note": "",
+                "why": str(row.get("why") or ""),
+            })
+        return savings
+    return _fallback_savings(transactions, catalogue)
+
+
+def _research_savings(targets, transactions):
+    started = time.perf_counter()
+    try:
+        if not targets:
+            detail = "No unsaved non-Income merchants to research"
+            web_savings = []
+        else:
+            research, domains = gemini.research_discounts(targets)
+            web_savings = _web_savings(research, targets, transactions)
+            source_detail = ", ".join(domains) if domains else "no grounding sources reported"
+            detail = f"{len(web_savings)} web savings proposed; grounding sources: {source_detail}"
+        status = "ok"
+    except Exception as error:
+        web_savings = []
+        status = "fallback"
+        detail = f"web research unavailable: {str(error)[:120]}"
+    entry = {
+        "step": "research",
+        "label": "Research live student discounts",
+        "status": status,
+        "detail": detail,
+        "ms": int((time.perf_counter() - started) * 1000),
+    }
+    return web_savings, entry
 
 
 def _web_savings(result, targets, transactions):
@@ -306,102 +398,106 @@ def _web_savings(result, targets, transactions):
     return savings
 
 
-def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, use_gemini):
+def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, use_gemini, emit=None):
     trace = []
     status = "ok" if use_gemini else "fallback"
 
+    def start(step):
+        if emit:
+            emit({"type": "start", "step": step, "label": STEP_LABELS[step]})
+
     def record(step, label, started, detail=""):
-        trace.append({"step": step, "label": label, "status": status,
-                      "detail": detail, "ms": int((time.perf_counter() - started) * 1000)})
+        entry = {
+            "step": step,
+            "label": label,
+            "status": status,
+            "detail": detail,
+            "ms": int((time.perf_counter() - started) * 1000),
+        }
+        trace.append(entry)
+        if emit:
+            emit({"type": "step", **entry})
+        return entry
 
     started = time.perf_counter()
+    start("extract")
     if is_csv:
         transactions = _parse_csv(file_bytes)
     elif use_gemini:
-        extracted = gemini.extract_statement(file_bytes, mime_type)
+        start("categorise")
+        extracted = gemini.extract_statement(file_bytes, mime_type, CATEGORIES)
         transactions = _normalise_transactions(extracted.get("transactions", []))
+        for transaction in transactions:
+            category = transaction.pop("_category")
+            if category not in CATEGORIES:
+                raise ValueError("Gemini returned an invalid transaction category")
+            transaction["category"] = category
     else:
         transactions = []
     record("extract", "Extract transactions", started, f"{len(transactions)} transactions")
 
-    started = time.perf_counter()
-    if use_gemini:
-        public_rows = [{key: value for key, value in tx.items() if not key.startswith("_")} for tx in transactions]
-        result = gemini.categorise_transactions(public_rows, CATEGORIES)
-        assigned = result.get("categories", [])
-        if len(assigned) != len(transactions) or any(category not in CATEGORIES for category in assigned):
-            raise ValueError("Gemini returned invalid category assignments")
-        for tx, category in zip(transactions, assigned):
-            tx["category"] = category
+    if use_gemini and not is_csv:
+        started = time.perf_counter()
+        record(
+            "categorise",
+            "Categorise transactions",
+            started,
+            f"categorised during extraction by {gemini.MODEL}",
+        )
     else:
-        for tx in transactions:
-            tx["category"] = _fallback_category(tx)
-    record("categorise", "Categorise transactions", started, f"{len(transactions)} categorised")
+        started = time.perf_counter()
+        start("categorise")
+        if use_gemini:
+            public_rows = [{key: value for key, value in tx.items() if not key.startswith("_")} for tx in transactions]
+            result = gemini.categorise_transactions(public_rows, CATEGORIES)
+            assigned = result.get("categories", [])
+            if len(assigned) != len(transactions) or any(category not in CATEGORIES for category in assigned):
+                raise ValueError("Gemini returned invalid category assignments")
+            for tx, category in zip(transactions, assigned):
+                tx["category"] = category
+        else:
+            for tx in transactions:
+                tx["category"] = _fallback_category(tx)
+        record("categorise", "Categorise transactions", started, f"{len(transactions)} categorised")
 
     categories, income, spent = _aggregate(transactions)
     for tx in transactions:
         tx.pop("_income", None)
-    started = time.perf_counter()
+    targets = _research_targets(transactions, catalogue) if use_gemini else []
     candidates = deals_for_transactions(transactions, catalogue)
-    if use_gemini and candidates:
-        selected = gemini.choose_savings(
-            transactions, categories, candidates
-        ).get("savings", [])
-        by_id = {deal["id"]: deal for deal in candidates}
-        savings = []
-        for row in selected[:8]:
-            deal = by_id.get(row.get("deal_id"))
-            if not deal:
-                continue
-            evidence_ids = row.get("evidence_ids")
-            evidence_ids = evidence_ids if isinstance(evidence_ids, list) else []
-            savings.append({
-                "id": deal["id"],
-                "title": str(row.get("title") or f"Save with {deal['brand']} student offer"),
-                "category": str(row.get("category") or deal["category"]),
-                "current_spend": row.get("current_spend", 0),
-                "est_monthly_saving": row.get("est_monthly_saving", 0),
-                "deal": deal,
-                "evidence": [
-                    _line(transactions[index])
-                    for index in evidence_ids
-                    if type(index) is int and 0 <= index < len(transactions)
-                ],
-                "evidence_ids": evidence_ids,
-                "verified": False,
-                "verification_note": "",
-                "why": str(row.get("why") or ""),
-            })
-    else:
-        savings = _fallback_savings(transactions, catalogue)
-    record("match", "Match student deals", started, f"{len(savings)} savings proposed from {len(candidates)} candidate deals")
-
+    match_started = time.perf_counter()
+    start("match")
     if use_gemini:
-        started = time.perf_counter()
-        try:
-            targets = _research_targets(transactions, savings)
-            if targets:
-                research, domains = gemini.research_discounts(targets)
-                web_savings = _web_savings(research, targets, transactions)
-                savings.extend(web_savings)
-                source_detail = ", ".join(domains) if domains else "no grounding sources reported"
-                detail = f"{len(web_savings)} web savings proposed; grounding sources: {source_detail}"
-            else:
-                detail = "No unsaved non-Income merchants to research"
-            trace.append({
-                "step": "research", "label": "Research live student discounts",
-                "status": "ok", "detail": detail,
-                "ms": int((time.perf_counter() - started) * 1000),
-            })
-        except Exception as error:
-            trace.append({
-                "step": "research", "label": "Research live student discounts",
-                "status": "fallback",
-                "detail": f"web research unavailable: {str(error)[:120]}",
-                "ms": int((time.perf_counter() - started) * 1000),
-            })
+        start("research")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            match_future = executor.submit(
+                _match_savings, transactions, categories, candidates, catalogue, True
+            )
+            research_future = executor.submit(_research_savings, targets, transactions)
+            for future in as_completed((match_future, research_future)):
+                if future is match_future:
+                    savings = future.result()
+                    record(
+                        "match", "Match student deals", match_started,
+                        f"{len(savings)} savings proposed from {len(candidates)} candidate deals",
+                    )
+                else:
+                    web_savings, research_entry = future.result()
+                    trace.append(research_entry)
+                    if emit:
+                        emit({"type": "step", **research_entry})
+                    savings.extend(web_savings)
+    else:
+        savings = _match_savings(
+            transactions, categories, candidates, catalogue, False
+        )
+        record(
+            "match", "Match student deals", match_started,
+            f"{len(savings)} savings proposed from {len(candidates)} candidate deals",
+        )
 
     started = time.perf_counter()
+    start("verify")
     transactions_by_line = {_line(tx): tx for tx in transactions}
     real_lines = set(transactions_by_line)
     category_totals = {row["name"]: row["total"] for row in categories}
@@ -457,10 +553,13 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
         critique = gemini.critique_savings(transactions, verified)
         critic = json.dumps(critique.get("flags", []), ensure_ascii=False)
     for saving, reason in rejected:
-        trace.append({
+        rejection = {
             "step": "verify", "label": f"Rejected {saving.get('title', 'saving')}",
             "status": "rejected", "detail": reason, "ms": 0,
-        })
+        }
+        trace.append(rejection)
+        if emit:
+            emit({"type": "step", **rejection})
     record(
         "verify", "Verify savings", started,
         f"{len(verified)} verified; {len(rejected)} rejected"
@@ -468,6 +567,7 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
     )
 
     started = time.perf_counter()
+    start("plan")
     monthly = round(sum(item["est_monthly_saving"] for item in verified), 2)
     if use_gemini:
         plan = gemini.build_plan(verified, categories, university)
