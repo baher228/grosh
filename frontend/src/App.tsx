@@ -31,8 +31,8 @@ export default function App() {
     <div className="min-h-dvh" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="sticky top-0 z-30 border-b border-rule/70 bg-paper/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3.5 sm:px-5">
-          <button onClick={() => { setA(null); setView('statement') }} className="font-display text-xl font-bold tracking-[-0.03em]">
-            grosh<span className="text-pen">.</span>
+          <button onClick={() => { setA(null); setView('statement') }} aria-label="grosh home" className="shrink-0">
+            <img src="/grosh-logo.png" alt="grosh" width={1086} height={231} className="h-[18px] w-auto sm:h-[22px]" />
           </button>
           <nav className="flex items-center gap-2 sm:gap-3">
             {a && view === 'statement' && (
