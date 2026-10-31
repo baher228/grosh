@@ -115,6 +115,9 @@ def add_web_notifications(rows, skip_wishlist_ids=None):
             continue
         if item["id"] in demo_wishlist_ids or item["id"] in skip_wishlist_ids:
             continue
+        item_tokens = {t for t in re.findall(r"[a-z0-9]+", item["item"].casefold()) if len(t) >= 3}
+        if item_tokens and not item_tokens & set(re.findall(r"[a-z0-9]+", f"{brand} {offer}".casefold())):
+            continue
         slug = re.sub(r"[^a-z0-9]+", "-", brand.casefold()).strip("-") or "offer"
         deal_id = f"web-{slug}"
         pair = (item["id"], deal_id)

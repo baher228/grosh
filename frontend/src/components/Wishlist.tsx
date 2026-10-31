@@ -9,6 +9,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
   const [price, setPrice] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
 
   const refresh = async () => {
     try {
@@ -33,130 +34,130 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
     setBusy(true); setMsg(null)
     try {
       await api.addWish(text.trim(), price ? Number(price) : null)
-      setText(''); setPrice(''); await refresh()
+      setText(''); setPrice(''); setAdding(false); await refresh()
     } catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
   }
   const scan = async () => {
     setBusy(true); setMsg(null)
     try {
       const fresh = await api.scan()
-      setMsg(`${fresh.length ? `${fresh.length} new deal${fresh.length > 1 ? 's' : ''} match your list.` : 'No new matches in today\'s deals.'} Still searching the web for live offers…`)
+      setMsg(fresh.length ? `${fresh.length} new match${fresh.length > 1 ? 'es' : ''}. Still checking the web.` : 'Nothing new yet. Still checking the web.')
       await refresh()
     } catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
   }
 
   const demo = async () => {
     setBusy(true); setMsg(null)
-    try { await api.wishDemo(); await refresh(); setMsg('Demo list ready. Now press “Check today’s deals”.') }
+    try { await api.wishDemo(); await refresh(); setMsg(null) }
     catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
   }
 
-  const dedupe = (ds: WishItem['matches']) => ds.filter((d, i) => ds.findIndex(x => x.brand === d.brand && x.offer === d.offer) === i)
-  const Provider = ({ name }: { name: string }) => (
-    <span className="rounded-full border border-rule bg-paper px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ink-soft">{name}</span>
-  )
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.shiftKey && e.key === 'D' && !(e.target instanceof HTMLInputElement)) demo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const budget = (w?: { max_price: number | null }) => w?.max_price ? `Budget £${w.max_price.toLocaleString('en-GB')}` : 'No budget'
+  const offerText = (offer: string, item: string) => offer.toLowerCase().startsWith(item.toLowerCase() + ':') ? offer.slice(item.length + 1).trim().replace(/^./, c => c.toUpperCase()) : offer
+  const byId = Object.fromEntries(items.map(w => [w.id, w]))
+  const fresh = [...notices].reverse()
+
+  const Status = ({ web }: { web: boolean }) => web
+    ? <span title="Found by a Gemini web lookup. Check the price on the shop's site." className="inline-flex items-center gap-1.5 text-amber-700"><span className="size-1.5 rounded-full bg-amber-500" />Unconfirmed</span>
+    : <span title="Listed in a student-deal provider's catalogue." className="inline-flex items-center gap-1.5 text-keep"><span className="size-1.5 rounded-full bg-keep" />Verified</span>
 
   return (
     <div className={`fixed inset-0 z-40 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
-      <div onClick={onClose} className={`absolute inset-0 bg-ink/30 backdrop-blur-[2px] transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
+      <div onClick={onClose} className={`absolute inset-0 bg-ink/25 backdrop-blur-[2px] transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
       <aside role="dialog" aria-label="Wishlist"
-        className={`absolute right-0 top-0 flex h-dvh w-full max-w-md flex-col bg-paper transition-transform duration-300 md:max-w-[880px] ${open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgba(23,35,61,.5)]' : 'translate-x-full'}`}
+        className={`absolute right-0 top-0 flex h-dvh w-full flex-col bg-sheet transition-transform duration-300 sm:max-w-[600px] ${open ? 'translate-x-0 shadow-[-24px_0_60px_-30px_rgba(23,35,61,.45)]' : 'translate-x-full'}`}
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="flex items-start justify-between gap-4 border-b border-rule/70 px-5 py-4 md:px-8 md:py-6">
+        <header className="flex items-center justify-between gap-4 border-b border-rule/60 px-5 py-4 sm:px-10 sm:py-6">
           <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">Wishlist</h2>
-            <p className="mt-1 max-w-[34rem] text-sm text-ink-soft">Tell Margin what you're saving up for. It watches new student deals and tells you when one fits your price.</p>
+            <h2 className="font-display text-2xl font-semibold tracking-tight">Wishlist</h2>
+            <p className="mt-0.5 text-sm text-ink-soft">{items.length} watching{notices.length ? ` · ${notices.length} new` : ''}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink">Close</button>
-        </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setAdding(v => !v)} aria-expanded={adding}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-sm font-medium text-sheet hover:bg-ink/90">
+              <span aria-hidden className="text-base leading-none">{adding ? '×' : '+'}</span>{adding ? 'Cancel' : 'Add item'}
+            </button>
+            <button onClick={onClose} aria-label="Close wishlist" className="grid size-9 place-items-center rounded-full text-xl leading-none text-ink-soft hover:bg-paper hover:text-ink">×</button>
+          </div>
+        </header>
 
-        <div className="flex flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:overflow-hidden">
-          <div className="space-y-6 px-5 py-5 md:overflow-y-auto md:px-8 md:py-6">
-            <form onSubmit={add} className="sheet rounded-xl p-4">
-              <div className="flex gap-2">
-                <input value={text} onChange={e => setText(e.target.value)} placeholder="Nike Tech Fleece, AirPods Pro 2…"
-                  className="min-w-0 flex-1 rounded-lg border border-rule bg-sheet px-3.5 py-2.5 outline-none focus:border-ink" />
-                <div className="relative w-24">
-                  <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-soft">£</span>
-                  <input value={price} onChange={e => setPrice(e.target.value.replace(/[^\d.]/g, ''))} inputMode="decimal" placeholder="max"
-                    className="w-full rounded-lg border border-rule bg-sheet py-2.5 pr-3 pl-7 outline-none focus:border-ink" />
-                </div>
+        <div className="flex-1 overflow-y-auto px-5 sm:px-10">
+          {adding && (
+            <form onSubmit={add} className="flex flex-wrap gap-2 border-b border-rule/60 py-5">
+              <input autoFocus value={text} onChange={e => setText(e.target.value)} placeholder="What are you after?"
+                className="min-w-0 flex-[1_1_14rem] rounded-lg border border-rule bg-paper/50 px-3.5 py-2.5 outline-none focus:border-ink" />
+              <div className="relative w-28">
+                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-soft">£</span>
+                <input value={price} onChange={e => setPrice(e.target.value.replace(/[^\d.]/g, ''))} inputMode="decimal" placeholder="Budget"
+                  className="w-full rounded-lg border border-rule bg-paper/50 py-2.5 pr-3 pl-7 outline-none focus:border-ink" />
               </div>
-              <button disabled={busy} className="mt-2 w-full rounded-lg bg-ink px-4 py-2.5 font-medium text-sheet hover:bg-ink/90 disabled:opacity-60">Add to wishlist</button>
+              <button disabled={busy || !text.trim()} className="rounded-lg bg-ink px-5 py-2.5 font-medium text-sheet hover:bg-ink/90 disabled:opacity-40">Add</button>
             </form>
+          )}
 
-            <section>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <h3 className="font-display text-lg font-semibold whitespace-nowrap">Watching <span className="text-ink-soft num">{items.length || ''}</span></h3>
-                <div className="flex gap-4 text-sm whitespace-nowrap">
-                  {items.length > 0 && <button onClick={demo} disabled={busy} className="text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink">Reset demo</button>}
-                  <button onClick={scan} disabled={busy || items.length === 0} className="font-medium underline underline-offset-4">{busy ? 'Checking…' : 'Check today’s deals'}</button>
-                </div>
-              </div>
-              {msg && <p className="mt-2 text-sm text-keep">{msg}</p>}
-              {items.length === 0 && (
-                <div className="mt-3 rounded-xl border border-dashed border-rule p-5 text-sm text-ink-soft">
-                  Nothing yet. Add the first thing you want above, or
-                  <button onClick={demo} disabled={busy} className="ml-1 font-medium text-ink underline underline-offset-4">try the demo list</button>.
-                </div>
-              )}
-              <ul className="mt-3 space-y-3">
+          <section className="pt-7">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-xs font-semibold tracking-[.12em] text-ink-soft uppercase">New matches</h3>
+              {items.length > 0 && <button onClick={scan} disabled={busy} className="text-sm font-medium text-ink underline decoration-rule underline-offset-4 hover:decoration-ink">{busy ? 'Checking…' : 'Check for deals'}</button>}
+            </div>
+            {msg && <p className="mt-2 text-sm text-ink-soft">{msg}</p>}
+            {fresh.length === 0 ? (
+              <p className="py-6 text-sm text-ink-soft">{items.length ? 'No new matches yet. Deals that fit your list will show up here.' : 'Add something you want and grosh will flag student deals that fit your budget.'}</p>
+            ) : (
+              <ul className="divide-y divide-rule/60">
+                {fresh.map(n => (
+                  <li key={n.id} className="notice flex flex-col items-start gap-3 py-5 sm:flex-row sm:items-center sm:gap-4">
+                    <div className="w-full min-w-0 flex-1">
+                      <p className="flex items-center gap-2 font-medium">{!n.read && <span className="size-1.5 shrink-0 rounded-full bg-pen" aria-label="new" />}<span className="truncate">{n.item}</span></p>
+                      <p className="mt-1 text-[15px] leading-snug text-ink">{offerText(n.deal.offer, n.item)}</p>
+                      <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
+                        <span className="font-medium text-ink">{n.deal.provider}</span>
+                        <span>{budget(byId[n.wishlist_id])}</span>
+                        <Status web={!!n.deal.tags?.includes('web')} />
+                      </p>
+                    </div>
+                    <a href={n.deal.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-full border border-ink px-4 py-2 text-sm font-medium hover:bg-ink hover:text-sheet">View deal</a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="pt-8 pb-10">
+            <h3 className="text-xs font-semibold tracking-[.12em] text-ink-soft uppercase">Watching</h3>
+            {items.length === 0 ? (
+              <p className="py-6 text-sm text-ink-soft">Your list is empty. <button onClick={demo} disabled={busy} className="font-medium text-ink underline underline-offset-4">Load a demo list</button></p>
+            ) : (
+              <ul className="mt-1 divide-y divide-rule/60">
                 {items.map(w => {
-                  const alerts = notices.filter(n => n.wishlist_id === w.id).map(n => n.deal)
-                  const ms = dedupe([...alerts, ...w.matches])
-                  const hits = notices.filter(n => n.wishlist_id === w.id).length
+                  const alert = notices.find(n => n.wishlist_id === w.id)?.deal
+                  const best = alert ?? w.matches[0]
                   return (
-                    <li key={w.id} className="group rounded-xl border border-rule bg-sheet p-4 transition-colors hover:border-ink/40">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-display text-lg leading-tight font-semibold">{w.item}</p>
-                          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-soft">
-                            {w.max_price ? <span className="num">Target under £{w.max_price}</span> : <span>Any price</span>}
-                            <span className="flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${hits ? 'bg-pen' : 'bg-keep'}`} />{hits ? `${hits} new alert${hits > 1 ? 's' : ''}` : 'Watching'}</span>
-                          </p>
-                        </div>
-                        <button onClick={async () => { await api.delWish(w.id); refresh() }} className="text-sm text-ink-soft opacity-70 group-hover:opacity-100 hover:text-pen">Remove</button>
+                    <li key={w.id} className="group flex items-center gap-4 py-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium">{w.item}</p>
+                        <p className="mt-0.5 truncate text-sm text-ink-soft">
+                          <span>{budget(w)}</span>
+                          <span aria-hidden> · </span>
+                          {best ? <>{best.discount_pct ? `${best.discount_pct}% off` : 'Student offer'} via {best.provider === 'Direct' ? best.brand : best.provider}</> : 'No match yet'}
+                        </p>
                       </div>
-                      {ms.length > 0 ? (
-                        <ul className="mt-3 space-y-2 border-t border-dashed border-rule pt-3 text-sm">
-                          {ms.slice(0, 2).map(d => (
-                            <li key={d.id}>
-                              <a href={d.url} target="_blank" rel="noreferrer" className="flex items-start justify-between gap-3 hover:underline">
-                                <span className="min-w-0">{d.offer}</span><Provider name={d.provider} />
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : <p className="mt-3 border-t border-dashed border-rule pt-3 text-sm text-ink-soft">No deal yet. You'll see it here when one turns up.</p>}
+                      <button onClick={async () => { await api.delWish(w.id); refresh() }} aria-label={`Remove ${w.item}`}
+                        className="grid size-8 shrink-0 place-items-center rounded-full text-lg text-ink-soft opacity-60 group-hover:opacity-100 hover:bg-paper hover:text-pen focus-visible:opacity-100">×</button>
                     </li>
                   )
                 })}
-              </ul>
-            </section>
-          </div>
-
-          <section className="order-first border-b border-rule/70 px-5 py-5 md:order-none md:border-b-0 md:overflow-y-auto md:border-l md:bg-sheet/40 md:px-8 md:py-6">
-            <div className="flex items-baseline justify-between">
-              <h3 className="font-display text-lg font-semibold">New for you</h3>
-              {notices.length > 0 && <span className="text-sm text-ink-soft num">{notices.length} alert{notices.length > 1 ? 's' : ''}</span>}
-            </div>
-            {notices.length === 0 ? (
-              <div className="mt-3 rounded-xl border border-dashed border-rule p-5 text-sm text-ink-soft">
-                Deals that drop for anything you're watching land here. Press <span className="text-ink">Check today’s deals</span> to run a scan.
-              </div>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {[...notices].reverse().map(n => (
-                  <li key={n.id} className="notice rounded-xl border border-ink bg-sheet p-4 shadow-[0_10px_30px_-22px_rgba(23,35,61,.6)]">
-                    <div className="flex items-center justify-between gap-3 text-sm text-ink-soft">
-                      <span className="flex min-w-0 items-center gap-2"><span className="size-1.5 shrink-0 rounded-full bg-pen" /><span className="truncate">For your {n.item}</span></span>
-                      {n.deal.tags?.includes('web') ? <Provider name="web lookup" /> : <Provider name={n.deal.provider} />}
-                    </div>
-                    <p className="mt-2 font-medium leading-snug">{n.deal.offer.toLowerCase().startsWith(n.deal.brand.toLowerCase()) || n.deal.offer.toLowerCase().startsWith(n.item.toLowerCase()) ? n.deal.offer : `${n.deal.brand}: ${n.deal.offer}`}</p>
-                    <p className="mt-1 text-sm text-ink-soft">{n.reason}</p>
-                    <a className="mt-3 inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4" href={n.deal.url} target="_blank" rel="noreferrer">See the deal →</a>
-                  </li>
-                ))}
               </ul>
             )}
           </section>

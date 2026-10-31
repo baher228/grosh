@@ -54,7 +54,7 @@ export function Intake({ onFile, onSample, busy, error, progress }: {
           Your bank statement, marked up by someone who knows every student discount.
         </h1>
         <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-ink-soft">
-          Drop in a month of transactions. Margin's Gemini agent reads each line, finds where a UNiDAYS, Student Beans,
+          Drop in a month of transactions. grosh's Gemini agent reads each line, finds where a UNiDAYS, Student Beans,
           TOTUM or railcard deal beats what you paid, and checks every saving against your real spending before it shows you.
         </p>
         <label className="mt-8 block max-w-sm">
