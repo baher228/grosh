@@ -51,7 +51,7 @@ export function Intake({ onFile, onSample, busy, error, progress }: {
     <section className="mx-auto grid max-w-6xl gap-10 px-5 pt-10 pb-16 md:grid-cols-[1.1fr_1fr] md:gap-16 md:pt-20">
       <div>
         <h1 className="font-display text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.03em] text-balance md:text-[4.2rem]">
-          Your bank statement, marked up by someone who knows every student discount.
+          Making your money go further.
         </h1>
         <p className="mt-6 max-w-[34rem] text-lg leading-relaxed text-ink-soft">
           Drop in a month of transactions. grosh's Gemini agent reads each line, finds where a UNiDAYS, Student Beans,
