@@ -8,6 +8,7 @@ export type FeedbackRule = {
 export type Saving = {
   id: string; title: string; category: string; current_spend: number; est_monthly_saving: number
   deal: Deal; evidence: string[]; verified: boolean; verification_note: string; why: string
+  confidence?: 'verified' | 'unconfirmed'; critic_note?: string
 }
 export type TraceStep = { step: string; label: string; status: 'ok' | 'fallback' | 'rejected'; detail: string; ms: number }
 export type Analysis = {
@@ -16,8 +17,9 @@ export type Analysis = {
   transactions: Txn[]
   categories: { name: string; total: number; share: number; count: number }[]
   savings: Saving[]
-  plan: { headline: string; monthly_total: number; yearly_total: number; steps: string[] }
+  plan: { headline: string; monthly_total: number; yearly_total: number; unconfirmed_monthly?: number; steps: string[] }
   trace: TraceStep[]
+  replay?: { elapsed_ms: number; recorded_at: string }
   remembered?: { rule_id: string; kind: FeedbackKind; title: string }[]
 }
 export type WishItem = { id: string; item: string; max_price: number | null; created_at: string; matches: Deal[] }

@@ -29,6 +29,11 @@ const KIND_LABELS: Record<FeedbackKind, string> = {
   not_relevant: 'Not relevant',
 }
 
+const isUnconfirmed = (saving: Saving) => {
+  if (saving.confidence) return saving.confidence === 'unconfirmed'
+  return saving.deal.tags?.includes('web') ?? false
+}
+
 export function Plan({
   a, active, onPick, rules, onFeedback, onForget,
 }: {
@@ -53,6 +58,10 @@ export function Plan({
   const bars = rest > 0 ? [...top, { name: 'Everything else', total: rest, share: 0, count: 0 }] : top
   const sum = bars.reduce((s, c) => s + c.total, 0) || 1
   const rejected = a.trace.filter(t => t.status === 'rejected').length
+  const verifiedSavings = a.savings.filter(s => !isUnconfirmed(s))
+  const unconfirmedSavings = a.savings.filter(isUnconfirmed)
+  const unconfirmedMonthly = a.plan.unconfirmed_monthly
+    ?? unconfirmedSavings.reduce((total, saving) => total + saving.est_monthly_saving, 0)
 
   const closeFeedback = () => {
     setFeedbackFor(null)
@@ -89,12 +98,93 @@ export function Plan({
     }
   }
 
+  const renderSaving = (s: Saving, unconfirmed = false) => (
+    <li key={s.id}>
+      <article role="button" tabIndex={0} onClick={() => onPick(active === s.id ? null : s.id)}
+        className={`cursor-pointer rounded-xl border bg-sheet p-4 transition-colors ${active === s.id ? 'border-ink' : 'border-rule hover:border-ink-soft'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="font-medium leading-snug">{s.title}</h3>
+            <p className="mt-1 text-sm text-ink-soft">{s.deal.brand} via {dealProvider(s.deal)}: {s.deal.offer}</p>
+            {s.deal.tags?.includes('web') && <p className="mt-1.5 inline-block rounded-full border border-rule px-2 py-0.5 text-xs text-ink-soft">Gemini web lookup, check before buying</p>}
+          </div>
+          <p className="shrink-0 text-right">
+            <span className={`font-display text-xl font-semibold num ${unconfirmed ? 'text-ink-soft' : 'text-keep'}`}>{gbp(s.est_monthly_saving)}</span>
+            <span className="block text-xs text-ink-soft">per month</span>
+          </p>
+        </div>
+        {active === s.id && (
+          <div className="mt-4 space-y-3 border-t border-rule pt-3 text-sm">
+            <p>{s.why}</p>
+            <div>
+              <p className="text-ink-soft">Based on these lines in your statement</p>
+              <ul className="mt-1 space-y-0.5 num">{s.evidence.map(e => <li key={e}>{e}</li>)}</ul>
+            </div>
+            <p className={s.verified ? 'text-keep' : 'text-pen'}>{s.verified ? 'Checked: ' : 'Not verified: '}{s.verification_note}</p>
+            {s.critic_note && <p className="text-ink-soft">Reduced after review: {s.critic_note}</p>}
+            <a href={s.deal.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+              className="inline-block rounded-lg bg-ink px-4 py-2 font-medium text-sheet">Open the {s.deal.brand} offer</a>
+          </div>
+        )}
+        {feedbackFor === s.id ? (
+          <div
+            className="mt-3 border-t border-rule/70 pt-3"
+            onClick={event => event.stopPropagation()}
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                event.stopPropagation()
+                closeFeedback()
+              }
+            }}
+          >
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-rule bg-paper/50 p-1">
+              {FEEDBACK_CHOICES.map(choice => (
+                <button key={choice.kind} type="button" aria-pressed={feedbackKind === choice.kind}
+                  onClick={event => { event.stopPropagation(); setFeedbackKind(choice.kind); setFeedbackError(null) }}
+                  className={`min-w-0 rounded-md px-1.5 py-2 text-[11px] leading-tight transition-colors sm:text-xs ${feedbackKind === choice.kind ? 'bg-ink text-sheet' : 'text-ink-soft hover:bg-sheet hover:text-ink'}`}>
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <input value={feedbackNote} onChange={event => setFeedbackNote(event.target.value)}
+              onClick={event => event.stopPropagation()} type="text"
+              placeholder="Anything grosh should know? (optional)"
+              className="mt-2 w-full min-w-0 rounded-lg border border-rule bg-sheet px-3 py-2 text-base" />
+            {feedbackError && <p className="mt-2 text-sm text-pen">{feedbackError}</p>}
+            <div className="mt-2 flex justify-end gap-3">
+              <button type="button" onClick={event => { event.stopPropagation(); closeFeedback() }}
+                className="px-2 py-1.5 text-sm text-ink-soft hover:text-ink">Cancel</button>
+              <button type="button" disabled={!feedbackKind || feedbackBusy}
+                onClick={event => { void saveFeedback(event, s) }}
+                className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-sheet disabled:opacity-45">
+                {feedbackBusy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex justify-end border-t border-rule/60 pt-2">
+            <button type="button" onClick={event => {
+              event.stopPropagation()
+              setFeedbackFor(s.id)
+              setFeedbackKind(null)
+              setFeedbackNote('')
+              setFeedbackError(null)
+            }} className="text-sm text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink">
+              Not for me
+            </button>
+          </div>
+        )}
+      </article>
+    </li>
+  )
+
   return (
     <div className="space-y-8">
       <div>
         <p className="text-ink-soft">You could keep</p>
         <p className="font-display text-6xl font-semibold tracking-[-0.04em] text-keep num md:text-7xl">{gbp(a.plan.monthly_total, 0)}<span className="text-2xl text-ink-soft tracking-normal"> a month</span></p>
         <p className="mt-2 text-ink-soft num">That's {gbp(a.plan.yearly_total, 0)} over a year.</p>
+        {unconfirmedSavings.length > 0 && <p className="mt-1 text-sm text-ink-soft num">Plus up to {gbp(unconfirmedMonthly)} a month from offers grosh couldn't confirm — not counted.</p>}
         {a.source === 'gemini' && a.plan.headline && <p className="mt-4 max-w-[36rem] text-lg leading-snug">{a.plan.headline}</p>}
       </div>
 
@@ -113,89 +203,26 @@ export function Plan({
         </ul>
       </div>
 
+      <div aria-label="Confirmed monthly total" className="sticky top-[56px] z-20 flex items-baseline justify-between gap-3 border-b border-rule/60 bg-paper/95 py-2 backdrop-blur md:top-[60px]">
+        <span className="text-sm text-ink-soft">Confirmed monthly total</span>
+        <span className="font-display text-xl font-semibold text-keep num">{gbp(a.plan.monthly_total, 0)}<span className="ml-1 text-sm font-normal text-ink-soft">a month</span></span>
+      </div>
+
       <div>
         <h2 className="font-display text-2xl font-semibold tracking-tight">Where the deals are</h2>
         <ul className="mt-4 space-y-3">
-          {a.savings.map(s => (
-            <li key={s.id}>
-              <article role="button" tabIndex={0} onClick={() => onPick(active === s.id ? null : s.id)}
-                className={`cursor-pointer rounded-xl border bg-sheet p-4 transition-colors ${active === s.id ? 'border-ink' : 'border-rule hover:border-ink-soft'}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h3 className="font-medium leading-snug">{s.title}</h3>
-                    <p className="mt-1 text-sm text-ink-soft">{s.deal.brand} via {dealProvider(s.deal)}: {s.deal.offer}</p>
-                    {s.deal.tags?.includes('web') && <p className="mt-1.5 inline-block rounded-full border border-rule px-2 py-0.5 text-xs text-ink-soft">Gemini web lookup, check before buying</p>}
-                  </div>
-                  <p className="shrink-0 text-right">
-                    <span className="font-display text-xl font-semibold text-keep num">{gbp(s.est_monthly_saving)}</span>
-                    <span className="block text-xs text-ink-soft">per month</span>
-                  </p>
-                </div>
-                {active === s.id && (
-                  <div className="mt-4 space-y-3 border-t border-rule pt-3 text-sm">
-                    <p>{s.why}</p>
-                    <div>
-                      <p className="text-ink-soft">Based on these lines in your statement</p>
-                      <ul className="mt-1 space-y-0.5 num">{s.evidence.map(e => <li key={e}>{e}</li>)}</ul>
-                    </div>
-                    <p className={s.verified ? 'text-keep' : 'text-pen'}>{s.verified ? 'Checked: ' : 'Not verified: '}{s.verification_note}</p>
-                    <a href={s.deal.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                      className="inline-block rounded-lg bg-ink px-4 py-2 font-medium text-sheet">Open the {s.deal.brand} offer</a>
-                  </div>
-                )}
-                {feedbackFor === s.id ? (
-                  <div
-                    className="mt-3 border-t border-rule/70 pt-3"
-                    onClick={event => event.stopPropagation()}
-                    onKeyDown={event => {
-                      if (event.key === 'Escape') {
-                        event.stopPropagation()
-                        closeFeedback()
-                      }
-                    }}
-                  >
-                    <div className="grid grid-cols-3 gap-1 rounded-lg border border-rule bg-paper/50 p-1">
-                      {FEEDBACK_CHOICES.map(choice => (
-                        <button key={choice.kind} type="button" aria-pressed={feedbackKind === choice.kind}
-                          onClick={event => { event.stopPropagation(); setFeedbackKind(choice.kind); setFeedbackError(null) }}
-                          className={`min-w-0 rounded-md px-1.5 py-2 text-[11px] leading-tight transition-colors sm:text-xs ${feedbackKind === choice.kind ? 'bg-ink text-sheet' : 'text-ink-soft hover:bg-sheet hover:text-ink'}`}>
-                          {choice.label}
-                        </button>
-                      ))}
-                    </div>
-                    <input value={feedbackNote} onChange={event => setFeedbackNote(event.target.value)}
-                      onClick={event => event.stopPropagation()} type="text"
-                      placeholder="Anything grosh should know? (optional)"
-                      className="mt-2 w-full min-w-0 rounded-lg border border-rule bg-sheet px-3 py-2 text-base" />
-                    {feedbackError && <p className="mt-2 text-sm text-pen">{feedbackError}</p>}
-                    <div className="mt-2 flex justify-end gap-3">
-                      <button type="button" onClick={event => { event.stopPropagation(); closeFeedback() }}
-                        className="px-2 py-1.5 text-sm text-ink-soft hover:text-ink">Cancel</button>
-                      <button type="button" disabled={!feedbackKind || feedbackBusy}
-                        onClick={event => { void saveFeedback(event, s) }}
-                        className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-sheet disabled:opacity-45">
-                        {feedbackBusy ? 'Saving…' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3 flex justify-end border-t border-rule/60 pt-2">
-                    <button type="button" onClick={event => {
-                      event.stopPropagation()
-                      setFeedbackFor(s.id)
-                      setFeedbackKind(null)
-                      setFeedbackNote('')
-                      setFeedbackError(null)
-                    }} className="text-sm text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink">
-                      Not for me
-                    </button>
-                  </div>
-                )}
-              </article>
-            </li>
-          ))}
+          {verifiedSavings.map(s => renderSaving(s))}
         </ul>
         {a.savings.length === 0 && <p className="mt-4 text-ink-soft">No student deal beats what you paid this month. That's a good sign.</p>}
+        {verifiedSavings.length === 0 && unconfirmedSavings.length > 0 && <p className="mt-4 text-ink-soft">No confirmed student deals yet.</p>}
+        {unconfirmedSavings.length > 0 && (
+          <section className="mt-8">
+            <h2 className="font-display text-2xl font-semibold tracking-tight">Worth checking</h2>
+            <ul className="mt-4 space-y-3">
+              {unconfirmedSavings.map(s => renderSaving(s, true))}
+            </ul>
+          </section>
+        )}
         {rules.length > 0 && (
           <section className="mt-6 border-t border-rule/70 pt-5">
             <h3 className="font-display text-xl font-semibold tracking-tight">grosh remembers</h3>
@@ -239,6 +266,7 @@ export function Plan({
             <span className="font-medium">How the agent got here</span>
             <span className="block text-sm text-ink-soft">
               {a.trace.length} steps on {a.source === 'gemini' ? a.model : 'offline rules (no Gemini key)'}
+              {a.replay && ` · replay of a saved run that took ${(a.replay.elapsed_ms / 1000).toFixed(1)}s live`}
               {rejected > 0 ? `, ${rejected} claim${rejected > 1 ? 's' : ''} thrown out in checking` : ''}
             </span>
           </span>
