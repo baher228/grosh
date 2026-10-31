@@ -70,7 +70,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
           <button onClick={onClose} className="rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink">Close</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-y-auto md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:overflow-hidden">
           <div className="space-y-6 px-5 py-5 md:overflow-y-auto md:px-8 md:py-6">
             <form onSubmit={add} className="sheet rounded-xl p-4">
               <div className="flex gap-2">
@@ -86,9 +86,9 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
             </form>
 
             <section>
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="font-display text-lg font-semibold">Watching <span className="text-ink-soft num">{items.length || ''}</span></h3>
-                <div className="flex gap-4 text-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h3 className="font-display text-lg font-semibold whitespace-nowrap">Watching <span className="text-ink-soft num">{items.length || ''}</span></h3>
+                <div className="flex gap-4 text-sm whitespace-nowrap">
                   {items.length > 0 && <button onClick={demo} disabled={busy} className="text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink">Reset demo</button>}
                   <button onClick={scan} disabled={busy || items.length === 0} className="font-medium underline underline-offset-4">{busy ? 'Checking…' : 'Check today’s deals'}</button>
                 </div>
@@ -102,7 +102,8 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
               )}
               <ul className="mt-3 space-y-3">
                 {items.map(w => {
-                  const ms = dedupe(w.matches)
+                  const alerts = notices.filter(n => n.wishlist_id === w.id).map(n => n.deal)
+                  const ms = dedupe([...alerts, ...w.matches])
                   const hits = notices.filter(n => n.wishlist_id === w.id).length
                   return (
                     <li key={w.id} className="group rounded-xl border border-rule bg-sheet p-4 transition-colors hover:border-ink/40">
@@ -134,7 +135,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
             </section>
           </div>
 
-          <section className="border-rule/70 px-5 pt-1 pb-8 md:overflow-y-auto md:border-l md:bg-sheet/40 md:px-8 md:py-6">
+          <section className="order-first border-b border-rule/70 px-5 py-5 md:order-none md:border-b-0 md:overflow-y-auto md:border-l md:bg-sheet/40 md:px-8 md:py-6">
             <div className="flex items-baseline justify-between">
               <h3 className="font-display text-lg font-semibold">New for you</h3>
               {notices.length > 0 && <span className="text-sm text-ink-soft num">{notices.length} alert{notices.length > 1 ? 's' : ''}</span>}
@@ -151,7 +152,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
                       <span className="flex min-w-0 items-center gap-2"><span className="size-1.5 shrink-0 rounded-full bg-pen" /><span className="truncate">For your {n.item}</span></span>
                       {n.deal.tags?.includes('web') ? <Provider name="web lookup" /> : <Provider name={n.deal.provider} />}
                     </div>
-                    <p className="mt-2 font-medium leading-snug">{n.deal.brand}: {n.deal.offer}</p>
+                    <p className="mt-2 font-medium leading-snug">{n.deal.offer.toLowerCase().startsWith(n.deal.brand.toLowerCase()) || n.deal.offer.toLowerCase().startsWith(n.item.toLowerCase()) ? n.deal.offer : `${n.deal.brand}: ${n.deal.offer}`}</p>
                     <p className="mt-1 text-sm text-ink-soft">{n.reason}</p>
                     <a className="mt-3 inline-flex items-center gap-1 text-sm font-medium underline underline-offset-4" href={n.deal.url} target="_blank" rel="noreferrer">See the deal →</a>
                   </li>
