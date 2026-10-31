@@ -276,13 +276,29 @@ def research_wishlist(items):
 
 
 def critique_savings(transactions, savings):
+    compact = []
+    for saving in savings:
+        deal = saving.get("deal") if isinstance(saving.get("deal"), dict) else {}
+        compact.append({
+            "id": saving.get("id"),
+            "title": saving.get("title"),
+            "category": saving.get("category"),
+            "current_spend": saving.get("current_spend"),
+            "est_monthly_saving": saving.get("est_monthly_saving"),
+            "evidence": saving.get("evidence", []),
+            "deal": {
+                key: deal.get(key)
+                for key in ("brand", "provider", "offer", "discount_pct")
+            },
+        })
     return ask_json(
-        "Critique these proposed savings against the transactions. Return JSON only as "
-        '{"flags":["short explanation for each overclaim"]}. Return an empty flags list '
-        "if all claims are supported. Transactions: "
-        + json.dumps(transactions, ensure_ascii=False)
-        + " Proposed savings: "
-        + json.dumps(savings, ensure_ascii=False),
+        "Review these code-verified savings. Drop claims that are unsupported by their "
+        "evidence or that double count the same transactions. Reduce overclaims to a "
+        "conservative monthly amount. Never increase a saving. Return JSON only as "
+        '{"verdicts":[{"id":"<saving id>","action":"keep"|"reduce"|"drop",'
+        '"max_monthly_saving":number|null,"reason":"short"}]}. Include one verdict per '
+        "saving. Savings: "
+        + json.dumps(compact, ensure_ascii=False),
         model=MODEL,
     )
 

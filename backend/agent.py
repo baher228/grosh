@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+import logging
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,6 +12,8 @@ from datetime import date
 import gemini
 import feedback
 from deals import deals_for_transactions, load_deals
+
+logger = logging.getLogger(__name__)
 
 CATEGORIES = [
     "Groceries", "Eating out", "Takeaway/Delivery", "Transport", "Subscriptions",
@@ -575,10 +579,100 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
                 f"Saving ≤ actual {saving['category']} spend; evidence matches {len(evidence)} transaction(s)."
             )
             verified.append(saving)
-    critic = ""
+    verified.sort(
+        key=lambda saving: saving["est_monthly_saving"],
+        reverse=True,
+    )
+    claimed_lines = {}
+    deduplicated = []
+    for saving in verified:
+        evidence = saving.get("evidence", [])
+        shared_line = next(
+            (line for line in evidence if line in claimed_lines),
+            None,
+        )
+        if shared_line is not None:
+            rejected.append((
+                saving,
+                f"overlaps spend already counted by {claimed_lines[shared_line]}",
+            ))
+            continue
+        deduplicated.append(saving)
+        for line in evidence:
+            claimed_lines[line] = saving.get("title", "another saving")
+    verified = deduplicated
+
+    critic_dropped = 0
+    critic_reduced = 0
+    critic_available = False
     if use_gemini:
-        critique = gemini.critique_savings(transactions, verified)
-        critic = json.dumps(critique.get("flags", []), ensure_ascii=False)
+        try:
+            critique = gemini.critique_savings(transactions, verified)
+            verdicts = critique.get("verdicts", [])
+            if not isinstance(verdicts, list):
+                raise ValueError("critic returned invalid verdicts")
+        except Exception as error:
+            logger.warning("Savings critic unavailable: %s", str(error)[:160])
+            verdicts = []
+        else:
+            critic_available = True
+            by_id = {
+                str(saving.get("id")): saving
+                for saving in verified
+                if saving.get("id") is not None
+            }
+            for verdict in verdicts if isinstance(verdicts, list) else []:
+                if not isinstance(verdict, dict):
+                    continue
+                saving = by_id.get(str(verdict.get("id") or ""))
+                if saving is None:
+                    continue
+                action = verdict.get("action")
+                reason = str(verdict.get("reason") or "").strip()
+                if action == "drop":
+                    verified.remove(saving)
+                    by_id.pop(str(saving.get("id")), None)
+                    rejected.append((
+                        saving,
+                        "critic: " + (reason or "claim was not supported"),
+                    ))
+                    critic_dropped += 1
+                elif action == "reduce":
+                    saving["critic_note"] = reason
+                    maximum = verdict.get("max_monthly_saving")
+                    try:
+                        maximum_value = float(maximum)
+                    except (TypeError, ValueError, OverflowError):
+                        maximum_value = None
+                    if (
+                        isinstance(maximum, (int, float))
+                        and not isinstance(maximum, bool)
+                        and maximum_value is not None
+                        and math.isfinite(maximum_value)
+                        and maximum_value >= 0
+                    ):
+                        previous = saving["est_monthly_saving"]
+                        revised = round(min(previous, maximum_value), 2)
+                        if revised <= 0:
+                            verified.remove(saving)
+                            by_id.pop(str(saving.get("id")), None)
+                            rejected.append((
+                                saving,
+                                "critic: " + (reason or "claim was reduced to zero"),
+                            ))
+                            critic_dropped += 1
+                        else:
+                            saving["est_monthly_saving"] = revised
+                            if revised < previous:
+                                critic_reduced += 1
+
+    for saving in verified:
+        deal = saving.get("deal") if isinstance(saving.get("deal"), dict) else {}
+        tags = deal.get("tags") if isinstance(deal.get("tags"), list) else []
+        saving["confidence"] = (
+            "unconfirmed" if "web" in tags else "verified"
+        )
+
     for saving, reason in rejected:
         rejection = {
             "step": "verify", "label": f"Rejected {saving.get('title', 'saving')}",
@@ -589,15 +683,24 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
             emit({"type": "step", **rejection})
     record(
         "verify", "Verify savings", started,
-        f"{len(verified)} verified; {len(rejected)} rejected"
-        + (f"; critic flags: {critic}" if use_gemini else ""),
+        f"{len(verified)} verified; {len(rejected)} rejected; "
+        f"critic dropped {critic_dropped}, reduced {critic_reduced}"
+        + ("; critic unavailable" if not critic_available else ""),
     )
 
     started = time.perf_counter()
     start("plan")
-    monthly = round(sum(item["est_monthly_saving"] for item in verified), 2)
+    plan_savings = [
+        item for item in verified if item["confidence"] == "verified"
+    ]
+    monthly = round(sum(item["est_monthly_saving"] for item in plan_savings), 2)
+    unconfirmed_monthly = round(sum(
+        item["est_monthly_saving"]
+        for item in verified
+        if item["confidence"] == "unconfirmed"
+    ), 2)
     if use_gemini:
-        plan = gemini.build_plan(verified, categories, university)
+        plan = gemini.build_plan(plan_savings, categories, university)
         headline = str(plan.get("headline") or "").strip()
         steps = plan.get("steps")
         if not headline or not isinstance(steps, list) or not 3 <= len(steps) <= 5:
@@ -606,10 +709,12 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
             "headline": headline,
             "monthly_total": monthly,
             "yearly_total": round(monthly * 12, 2),
+            "unconfirmed_monthly": unconfirmed_monthly,
             "steps": [str(step) for step in steps],
         }
     else:
         plan = _fallback_plan(monthly)
+        plan["unconfirmed_monthly"] = unconfirmed_monthly
     record("plan", "Build savings plan", started, "Totals computed from verified savings")
 
     name = "Sample student (synthetic)" if filename == "sample_statement.csv" else (university or None)
