@@ -1,4 +1,4 @@
-export type Deal = { id: string; provider: string; brand: string; category?: string; offer: string; discount_pct?: number | null; url: string; tags?: string[] }
+export type Deal = { id: string; provider: string; brand: string; category?: string; offer: string; discount_pct?: number | null; url: string; tags?: string[]; source?: string; fetched_at?: string }
 export type Txn = { date: string; merchant: string; description?: string; amount: number; category: string }
 export type FeedbackKind = 'keep' | 'have' | 'not_relevant'
 export type FeedbackRule = {

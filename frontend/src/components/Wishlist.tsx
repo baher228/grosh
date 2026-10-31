@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
-import type { Notice, WishItem } from '../types'
+import { api, dealProvider } from '../api'
+import type { Deal, Notice, WishItem } from '../types'
 
 export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose: () => void; onNotices: (n: Notice[]) => void }) {
   const [items, setItems] = useState<WishItem[]>([])
@@ -68,8 +68,10 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
   const byId = Object.fromEntries(items.map(w => [w.id, w]))
   const fresh = [...notices].reverse()
 
-  const Status = ({ web }: { web: boolean }) => web
+  const Status = ({ deal }: { deal: Deal }) => deal.tags?.includes('web')
     ? <span title="Found by a Gemini web lookup. Check the price on the shop's site." className="inline-flex items-center gap-1.5 text-amber-700"><span className="size-1.5 rounded-full bg-amber-500" />Unconfirmed</span>
+    : deal.fetched_at
+    ? <span title="Student Beans offer, checked on this date." className="inline-flex items-center gap-1.5 text-keep"><span className="size-1.5 rounded-full bg-keep" />{dealProvider(deal)}</span>
     : <span title="Listed in a student-deal provider's catalogue." className="inline-flex items-center gap-1.5 text-keep"><span className="size-1.5 rounded-full bg-keep" />Verified</span>
 
   return (
@@ -122,9 +124,9 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
                       <p className="flex items-center gap-2 font-medium">{!n.read && <span className="size-1.5 shrink-0 rounded-full bg-pen" aria-label="new" />}<span className="truncate">{n.item}</span></p>
                       <p className="mt-1 text-[15px] leading-snug text-ink">{offerText(n.deal.offer, n.item)}</p>
                       <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
-                        <span className="font-medium text-ink">{n.deal.provider}</span>
+                        {!n.deal.fetched_at && <span className="font-medium text-ink">{n.deal.provider}</span>}
                         <span>{budget(byId[n.wishlist_id])}</span>
-                        <Status web={!!n.deal.tags?.includes('web')} />
+                        <Status deal={n.deal} />
                       </p>
                     </div>
                     <a href={n.deal.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-full border border-ink px-4 py-2 text-sm font-medium hover:bg-ink hover:text-sheet">View deal</a>
@@ -150,7 +152,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
                         <p className="mt-0.5 truncate text-sm text-ink-soft">
                           <span>{budget(w)}</span>
                           <span aria-hidden> · </span>
-                          {best ? <>{best.discount_pct ? `${best.discount_pct}% off` : 'Student offer'} via {best.provider === 'Direct' ? best.brand : best.provider}</> : 'No match yet'}
+                          {best ? <>{best.discount_pct ? `${best.discount_pct}% off` : 'Student offer'} via {best.fetched_at ? dealProvider(best) : best.provider === 'Direct' ? best.brand : best.provider}</> : 'No match yet'}
                         </p>
                       </div>
                       <button onClick={async () => { await api.delWish(w.id); refresh() }} aria-label={`Remove ${w.item}`}

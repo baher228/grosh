@@ -1,4 +1,4 @@
-import type { Analysis, FeedbackKind, FeedbackRule, Notice, Receipt, Saving, TraceStep, WishItem } from './types'
+import type { Analysis, Deal, FeedbackKind, FeedbackRule, Notice, Receipt, Saving, TraceStep, WishItem } from './types'
 
 export type StreamEvent =
   | { type: 'start'; step: string; label: string }
@@ -72,3 +72,13 @@ export const api = {
 
 export const gbp = (n: number, dp = 2) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: dp, maximumFractionDigits: dp }).format(n)
+
+export const dealProvider = (deal: Pick<Deal, 'provider' | 'fetched_at'>) => {
+  if (!deal.fetched_at) return deal.provider
+  const date = new Date(deal.fetched_at)
+  if (Number.isNaN(date.valueOf())) return deal.provider
+  const checked = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric', month: 'short', timeZone: 'UTC',
+  }).format(date)
+  return `${deal.provider} · checked ${checked}`
+}

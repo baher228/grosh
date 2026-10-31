@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { MouseEvent } from 'react'
-import { gbp } from '../api'
+import { dealProvider, gbp } from '../api'
 import type { Analysis, FeedbackKind, FeedbackRule, Saving } from '../types'
 
 const SHADES = ['#17233D', '#3B4A6B', '#65739A', '#93A0BF', '#BDC6DA', '#DCE2EC']
@@ -123,7 +123,7 @@ export function Plan({
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h3 className="font-medium leading-snug">{s.title}</h3>
-                    <p className="mt-1 text-sm text-ink-soft">{s.deal.brand} via {s.deal.provider}: {s.deal.offer}</p>
+                    <p className="mt-1 text-sm text-ink-soft">{s.deal.brand} via {dealProvider(s.deal)}: {s.deal.offer}</p>
                     {s.deal.tags?.includes('web') && <p className="mt-1.5 inline-block rounded-full border border-rule px-2 py-0.5 text-xs text-ink-soft">Gemini web lookup, check before buying</p>}
                   </div>
                   <p className="shrink-0 text-right">

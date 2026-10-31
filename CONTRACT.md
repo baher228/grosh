@@ -41,8 +41,9 @@ POST   /api/wishlist/demo            -> clears wishlist/notifications and seeds 
 POST   /api/wishlist/scan            -> returns new catalogue notifications first, plus live Google Search-grounded student deals completed within 25s when Gemini is available
 GET    /api/notifications            -> [{"id","wishlist_id","item","deal":Deal,"reason":str,"created_at","read":bool}]
 
-Deal = {"id","provider","brand","category","offer","discount_pct":int|null,"url","tags":[str]}
+Deal = {"id","provider","brand","category","offer","discount_pct":int|null,"url","tags":[str],"source"?:str,"fetched_at"?:str}
 Live web deals use ids beginning "web-" and tags ["web"]; notifications are deduplicated per wishlist item and deal.
+The main deals.json catalogue also includes non-duplicate rows from data/scraped_deals.json when that file parses. Student Beans rows carry source "studentbeans" and fetched_at; they match by brand tokens only, and at most three offers per brand are included as transaction candidates.
 
 Receipts:
 POST   /api/receipt                  multipart: file (image/*|pdf) -> Gemini receipt analysis; 503 if Gemini is unavailable
