@@ -18,6 +18,14 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    if (!open) return
+    const id = setInterval(async () => {
+      try { const n = await api.notifications(); setNotices(n); onNotices(n) } catch { /* ignore */ }
+    }, 3000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,7 +40,7 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
     setBusy(true); setMsg(null)
     try {
       const fresh = await api.scan()
-      setMsg(fresh.length ? `${fresh.length} new deal${fresh.length > 1 ? 's' : ''} match your list.` : 'No new matches in today\'s deals.')
+      setMsg(`${fresh.length ? `${fresh.length} new deal${fresh.length > 1 ? 's' : ''} match your list.` : 'No new matches in today\'s deals.'} Still searching the web for live offers…`)
       await refresh()
     } catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
   }
