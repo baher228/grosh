@@ -46,3 +46,8 @@ input, textarea, select { font-size: 16px; }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-8px) scale(.98) } to { opacity: 1; transform: none } }
 .notice { animation: drop-in .45s cubic-bezier(.2,.8,.2,1) both }
 @media (prefers-reduced-motion: reduce) { .notice { animation: none } }
+
+@layer base {
+  button:not(:disabled), [role="button"], a[href], label[for], summary, select, input[type="file"] { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+}
