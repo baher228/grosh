@@ -37,8 +37,32 @@ Wishlist (in-memory store is fine):
 GET    /api/wishlist                 -> [{"id","item","max_price":float|null,"created_at","matches":[Deal]}]
 POST   /api/wishlist {item, max_price?} -> created item with matches (deals currently in catalogue similar to item)
 DELETE /api/wishlist/{id}
-POST   /api/wishlist/scan            -> simulates a fresh deals feed (backend/data/new_deals.json) arriving; returns new notifications
+POST   /api/wishlist/demo            -> clears wishlist/notifications and seeds AirPods (£150), Nike trainers (£90), and MacBook Air (£1,000)
+POST   /api/wishlist/scan            -> returns new catalogue notifications first, plus live Google Search-grounded student deals completed within 25s when Gemini is available
 GET    /api/notifications            -> [{"id","wishlist_id","item","deal":Deal,"reason":str,"created_at","read":bool}]
 
 Deal = {"id","provider","brand","category","offer","discount_pct":int|null,"url","tags":[str]}
+Live web deals use ids beginning "web-" and tags ["web"]; notifications are deduplicated per wishlist item and deal.
+
+Receipts:
+POST   /api/receipt                  multipart: file (image/*|pdf) -> Gemini receipt analysis; 503 if Gemini is unavailable
+GET    /api/receipt/sample           -> cached Gemini analysis of frontend/public/sample-receipt.png
+
+Receipt response:
+{
+  "source": "gemini", "model": "gemini-...",
+  "store": str|null, "date": "YYYY-MM-DD"|null, "total": float|null,
+  "items": [{
+    "name": str, "qty": float, "price": float, "category": str,
+    "swap": str|null, "swap_price": float|null, "saving": float, "reason": str|null
+  }],
+  "discounts": float, "tips": [str], "total_saving": float, "monthly_saving": float,
+  "checks": {"items_sum": float, "total": float|null, "matches": bool|null, "note": str},
+  "trace": [
+    {"step":"read","label":"Reading every line on the receipt","status":str,"detail":str,"ms":int},
+    {"step":"swap","label":"Finding cheaper alternatives","status":str,"detail":str,"ms":0},
+    {"step":"verify","label":"Checking lines add up to the total","status":str,"detail":str,"ms":int}
+  ]
+}
+Savings are computed from valid cheaper swaps only; checks compare the sum of item prices minus discounts with the printed total.
 GET /api/health -> {"ok":true,"gemini":bool,"model":str}

@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import mimetypes
 import queue
 import threading
 from pathlib import Path
@@ -10,14 +12,32 @@ from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 import gemini
+import receipt
 from agent import analyze
-from store import add_item, notifications, remove_item, scan, wishlist
+from store import (
+    add_item,
+    add_web_notifications,
+    notifications,
+    remove_item,
+    scan,
+    seed_demo,
+    wishlist,
+)
 
 DATA = Path(__file__).parent / "data"
 CACHE = DATA / "sample_cache.json"
+RECEIPT_CACHE = DATA / "receipt_sample_cache.json"
+RECEIPT_IMAGE = (
+    Path(__file__).resolve().parent.parent
+    / "frontend"
+    / "public"
+    / "sample-receipt.png"
+)
 ALLOWED = {".pdf", ".csv", ".png", ".jpg", ".jpeg", ".webp"}
 _CACHE_LOCK = threading.Lock()
+_RECEIPT_CACHE_LOCK = threading.Lock()
 _STREAM_END = object()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="StudentSave API")
 app.add_middleware(
@@ -57,6 +77,18 @@ def _warm_sample_cache():
         temporary.replace(CACHE)
 
 
+def _warm_receipt_cache():
+    with _RECEIPT_CACHE_LOCK:
+        if RECEIPT_CACHE.exists() or not RECEIPT_IMAGE.is_file():
+            return
+        result = receipt.analyze_receipt(RECEIPT_IMAGE.read_bytes(), "image/png")
+        if result.get("source") != "gemini":
+            return
+        temporary = RECEIPT_CACHE.with_name(f".{RECEIPT_CACHE.name}.tmp")
+        temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(RECEIPT_CACHE)
+
+
 def _stream_response(events):
     def lines():
         while True:
@@ -92,8 +124,11 @@ def _analysis_stream(data, filename, mime_type, university, notes):
 
 @app.on_event("startup")
 def start_sample_cache_warmup():
-    if gemini.available() and not CACHE.exists():
-        threading.Thread(target=_warm_sample_cache, daemon=True).start()
+    if gemini.available():
+        if not CACHE.exists():
+            threading.Thread(target=_warm_sample_cache, daemon=True).start()
+        if RECEIPT_IMAGE.is_file() and not RECEIPT_CACHE.exists():
+            threading.Thread(target=_warm_receipt_cache, daemon=True).start()
 
 
 @app.get("/api/health")
@@ -191,6 +226,11 @@ def create_wishlist_item(body: WishlistRequest):
     return add_item(body.item.strip(), body.max_price)
 
 
+@app.post("/api/wishlist/demo")
+def wishlist_demo():
+    return seed_demo()
+
+
 @app.delete("/api/wishlist/{item_id}")
 def delete_wishlist_item(item_id: str):
     deleted = remove_item(item_id)
@@ -201,9 +241,68 @@ def delete_wishlist_item(item_id: str):
 
 @app.post("/api/wishlist/scan")
 def scan_wishlist():
-    return scan()
+    added = scan()
+    if not gemini.available() or not wishlist:
+        return added
+    items = [
+        {"item": item["item"], "max_price": item["max_price"]}
+        for item in wishlist
+    ]
+    try:
+        result_queue = queue.Queue()
+
+        def research():
+            try:
+                result_queue.put((True, gemini.research_wishlist(items)))
+            except Exception as error:
+                logger.info(
+                    "Skipping live wishlist search after %s",
+                    type(error).__name__,
+                )
+                result_queue.put((False, []))
+
+        threading.Thread(target=research, daemon=True).start()
+        succeeded, rows = result_queue.get(timeout=25)
+        if succeeded:
+            catalogue_items = {item["wishlist_id"] for item in added}
+            added.extend(add_web_notifications(rows, catalogue_items))
+    except queue.Empty:
+        logger.info("Skipping live wishlist search after timeout")
+    except Exception as error:
+        logger.info("Skipping live wishlist search after %s", type(error).__name__)
+    return added
 
 
 @app.get("/api/notifications")
 def get_notifications():
     return notifications
+
+
+@app.post("/api/receipt")
+async def receipt_upload(file: UploadFile = File(...)):
+    if not gemini.available():
+        raise HTTPException(status_code=503, detail="Receipt reading needs Gemini")
+    filename = Path(file.filename or "").name
+    mime_type = (file.content_type or mimetypes.guess_type(filename)[0] or "").lower()
+    if Path(filename).suffix.lower() == ".pdf":
+        mime_type = "application/pdf"
+    if not (mime_type == "application/pdf" or mime_type.startswith("image/")):
+        raise HTTPException(status_code=400, detail="Unsupported receipt file type")
+    data = await file.read()
+    try:
+        return await asyncio.to_thread(receipt.analyze_receipt, data, mime_type)
+    except Exception as error:
+        logger.info("Receipt analysis failed with %s", type(error).__name__)
+        raise HTTPException(status_code=502, detail="Receipt analysis failed") from error
+
+
+@app.get("/api/receipt/sample")
+def receipt_sample():
+    if RECEIPT_CACHE.is_file():
+        try:
+            return json.loads(RECEIPT_CACHE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    if not gemini.available():
+        raise HTTPException(status_code=503, detail="Receipt reading needs Gemini")
+    raise HTTPException(status_code=503, detail="Sample receipt analysis is warming")

@@ -216,6 +216,34 @@ def research_discounts(merchants):
     return result, domains
 
 
+def research_wishlist(items):
+    if not client:
+        raise RuntimeError("Gemini API key is not configured")
+    prompt = (
+        "Use Google Search to find currently live UK student deals relevant to these "
+        "wishlist items. Only include offers supported by a current provider page; do not "
+        "invent discounts. Return a JSON block in your answer: "
+        "{\"deals\":[{\"item\":\"exact wishlist item\",\"brand\":\"brand\","
+        "\"provider\":\"UNiDAYS, Student Beans, TOTUM, Direct, or other\","
+        "\"offer\":\"offer wording\",\"url\":\"provider page URL\","
+        "\"discount_pct\":10,\"category\":\"category\"}]}. "
+        "Include only currently verifiable student offers. Wishlist items: "
+        + json.dumps(items, ensure_ascii=False)
+    )
+    response = _generate_content(
+        model=MODEL,
+        contents=prompt,
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+    )
+    text = re.sub(r"```(?:json)?", "", response.text or "", flags=re.I).replace("```", "")
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("Wishlist search response did not contain a JSON object")
+    result = json.loads(text[start:end + 1])
+    deals = result.get("deals", []) if isinstance(result, dict) else []
+    return deals if isinstance(deals, list) else []
+
+
 def critique_savings(transactions, savings):
     return ask_json(
         "Critique these proposed savings against the transactions. Return JSON only as "
