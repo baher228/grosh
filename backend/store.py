@@ -16,7 +16,27 @@ def now():
 
 def find_matches(item, catalogue=None):
     catalogue = catalogue or load_deals()
-    return [deal for deal in catalogue if matches(item, deal)]
+    result = []
+    seen = set()
+    for deal in catalogue:
+        if not matches(item, deal):
+            continue
+        key = (deal["brand"].strip().casefold(), deal["offer"].strip().casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(deal)
+        if len(result) == 2:
+            break
+    return result
+
+
+def _notification_reason(item, deal):
+    reason = f"New {deal['provider']} offer on {item['item']}"
+    if item.get("max_price") is not None:
+        target = f"{item['max_price']:,.2f}".rstrip("0").rstrip(".")
+        reason += f", your target is £{target}"
+    return reason + "."
 
 
 def add_item(item, max_price=None):
@@ -37,9 +57,9 @@ def seed_demo():
     notified.clear()
     demo_wishlist_ids.clear()
     items = [
-        add_item("AirPods", 150),
-        add_item("Nike trainers", 90),
-        add_item("MacBook Air", 1000),
+        add_item("AirPods Pro 2", 200),
+        add_item("Nike Tech Fleece", 110),
+        add_item("MacBook Air M4", 1000),
     ]
     demo_wishlist_ids.update(item["id"] for item in items)
     return items
@@ -67,7 +87,7 @@ def scan():
                 "wishlist_id": item["id"],
                 "item": item["item"],
                 "deal": deal,
-                "reason": f"{deal['brand']} matches your wishlist item “{item['item']}”.",
+                "reason": _notification_reason(item, deal),
                 "created_at": now(),
                 "read": False,
             }
@@ -122,7 +142,7 @@ def add_web_notifications(rows, skip_wishlist_ids=None):
             "wishlist_id": item["id"],
             "item": item["item"],
             "deal": deal,
-            "reason": f"{brand} matches your wishlist item “{item['item']}”.",
+            "reason": _notification_reason(item, deal),
             "created_at": now(),
             "read": False,
         }

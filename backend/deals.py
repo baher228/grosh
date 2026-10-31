@@ -15,7 +15,8 @@ def tokens(text):
 
 def matches(item, deal):
     query = tokens(item)
-    words = tokens(" ".join([deal["brand"], deal["category"], *deal["tags"]]))
+    category_words = tokens(deal["category"]) - {"tech"}
+    words = tokens(" ".join([deal["brand"], *deal["tags"]])) | category_words
     return bool(query & words)
 
 
