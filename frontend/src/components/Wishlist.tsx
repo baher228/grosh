@@ -37,6 +37,12 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
     } catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
   }
 
+  const demo = async () => {
+    setBusy(true); setMsg(null)
+    try { await api.wishDemo(); await refresh(); setMsg('Demo list ready. Now press “Check today’s deals”.') }
+    catch (err) { setMsg((err as Error).message) } finally { setBusy(false) }
+  }
+
   return (
     <div className={`fixed inset-0 z-40 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
       <div onClick={onClose} className={`absolute inset-0 bg-ink/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} />
@@ -64,8 +70,8 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
               <h3 className="font-medium">New for you</h3>
               <ul className="mt-2 space-y-2">
                 {notices.map(n => (
-                  <li key={n.id} className="rounded-xl border border-ink bg-sheet p-3.5">
-                    <p className="text-sm text-ink-soft">For your “{n.item}”</p>
+                  <li key={n.id} className="notice rounded-xl border border-ink bg-sheet p-3.5">
+                    <p className="flex items-center gap-2 text-sm text-ink-soft"><span className="size-1.5 rounded-full bg-pen" />For your “{n.item}”{n.deal.tags?.includes('web') && <span className="rounded-full border border-rule px-1.5 text-xs">live web</span>}</p>
                     <p className="font-medium">{n.deal.brand}: {n.deal.offer}</p>
                     <p className="mt-1 text-sm text-ink-soft">{n.reason}</p>
                     <a className="mt-2 inline-block text-sm underline underline-offset-4" href={n.deal.url} target="_blank" rel="noreferrer">See deal on {n.deal.provider}</a>
@@ -78,10 +84,18 @@ export function Wishlist({ open, onClose, onNotices }: { open: boolean; onClose:
           <section>
             <div className="flex items-center justify-between">
               <h3 className="font-medium">Watching</h3>
-              <button onClick={scan} disabled={busy || items.length === 0} className="text-sm underline underline-offset-4 disabled:opacity-40">Check today's deals</button>
+              <div className="flex gap-3 text-sm">
+                {items.length > 0 && <button onClick={demo} disabled={busy} className="text-ink-soft underline decoration-rule underline-offset-4 disabled:opacity-40">Reset demo</button>}
+                <button onClick={scan} disabled={busy || items.length === 0} className="font-medium underline underline-offset-4 disabled:opacity-40">{busy ? 'Checking…' : 'Check today’s deals'}</button>
+              </div>
             </div>
             {msg && <p className="mt-2 text-sm text-keep">{msg}</p>}
-            {items.length === 0 && <p className="mt-2 text-sm text-ink-soft">Nothing yet. Add the first thing you want above.</p>}
+            {items.length === 0 && (
+              <div className="mt-2 rounded-xl border border-dashed border-rule p-4 text-sm text-ink-soft">
+                Nothing yet. Add the first thing you want above, or
+                <button onClick={demo} disabled={busy} className="ml-1 text-ink underline underline-offset-4">try the demo list</button>.
+              </div>
+            )}
             <ul className="mt-2 space-y-2">
               {items.map(w => (
                 <li key={w.id} className="rounded-xl border border-rule bg-sheet p-3.5">

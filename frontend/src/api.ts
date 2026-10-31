@@ -1,4 +1,4 @@
-import type { Analysis, Notice, TraceStep, WishItem } from './types'
+import type { Analysis, Notice, Receipt, TraceStep, WishItem } from './types'
 
 export type StreamEvent =
   | { type: 'start'; step: string; label: string }
@@ -48,6 +48,13 @@ export const api = {
     if (university) fd.append('university', university)
     return fetch('/api/analyze/stream', { method: 'POST', body: fd }).then(r => stream(r, on))
   },
+  receipt: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return fetch('/api/receipt', { method: 'POST', body: fd }).then(j<Receipt>)
+  },
+  receiptSample: () => fetch('/api/receipt/sample').then(j<Receipt>),
+  wishDemo: () => fetch('/api/wishlist/demo', { method: 'POST' }).then(j<WishItem[]>),
   wishlist: () => fetch('/api/wishlist').then(j<WishItem[]>),
   addWish: (item: string, max_price: number | null) =>
     fetch('/api/wishlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item, max_price }) }).then(j<WishItem>),

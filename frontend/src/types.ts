@@ -16,3 +16,10 @@ export type Analysis = {
 }
 export type WishItem = { id: string; item: string; max_price: number | null; created_at: string; matches: Deal[] }
 export type Notice = { id: string; wishlist_id: string; item: string; deal: Deal; reason: string; created_at: string; read: boolean }
+export type ReceiptItem = { name: string; qty: number; price: number; category: string; swap: string | null; swap_price: number | null; saving: number; reason: string | null }
+export type Receipt = {
+  source: 'gemini'; model: string; store: string | null; date: string | null; total: number | null
+  items: ReceiptItem[]; discounts: number; tips: string[]; total_saving: number; monthly_saving: number
+  checks: { items_sum: number; total: number | null; matches: boolean; note: string }
+  trace: TraceStep[]
+}

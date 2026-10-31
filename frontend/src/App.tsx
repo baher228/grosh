@@ -5,6 +5,7 @@ import { Intake } from './components/Intake'
 import { Statement } from './components/Statement'
 import { Plan } from './components/Plan'
 import { Wishlist } from './components/Wishlist'
+import { Receipts } from './components/Receipts'
 
 export default function App() {
   const [a, setA] = useState<Analysis | null>(null)
@@ -12,6 +13,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
   const [wish, setWish] = useState(false)
+  const [view, setView] = useState<'statement' | 'receipt'>('statement')
   const [notices, setNotices] = useState<Notice[]>([])
 
   const [progress, setProgress] = useState<StreamEvent[]>([])
@@ -29,11 +31,12 @@ export default function App() {
     <div className="min-h-dvh" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <header className="sticky top-0 z-30 border-b border-rule/70 bg-paper/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
-          <button onClick={() => setA(null)} className="font-display text-xl font-bold tracking-[-0.03em]">
+          <button onClick={() => { setA(null); setView('statement') }} className="font-display text-xl font-bold tracking-[-0.03em]">
             margin<span className="text-pen">.</span>
           </button>
           <nav className="flex items-center gap-1">
-            {a && <button onClick={() => setA(null)} className="rounded-lg px-3 py-1.5 text-ink-soft hover:text-ink">New statement</button>}
+            <button onClick={() => { if (view === 'statement') setA(null); setView('statement') }} className={`rounded-lg px-3 py-1.5 hover:text-ink ${view === 'statement' ? 'text-ink' : 'text-ink-soft'}`}>{a && view === 'statement' ? 'New statement' : 'Statement'}</button>
+            <button onClick={() => setView('receipt')} className={`rounded-lg px-3 py-1.5 hover:text-ink ${view === 'receipt' ? 'text-ink' : 'text-ink-soft'}`}>Receipt</button>
             <button onClick={() => setWish(true)} className="relative rounded-lg border border-rule bg-sheet px-3.5 py-1.5 hover:border-ink">
               Wishlist
               {unread > 0 && <span className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full bg-pen text-[11px] font-semibold text-white num">{unread}</span>}
@@ -42,7 +45,7 @@ export default function App() {
         </div>
       </header>
 
-      {!a ? (
+      {view === 'receipt' ? <Receipts /> : !a ? (
         <Intake busy={busy} error={error} progress={progress} onSample={() => run(() => api.sampleStream(onEvent))} onFile={(f, u) => run(() => api.analyzeStream(f, u, onEvent))} />
       ) : (
         <main className="mx-auto grid max-w-6xl gap-10 px-5 pt-8 pb-20 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-14 md:pt-12">
