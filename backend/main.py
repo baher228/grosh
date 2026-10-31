@@ -36,6 +36,8 @@ RECEIPT_IMAGE = (
 ALLOWED = {".pdf", ".csv", ".png", ".jpg", ".jpeg", ".webp"}
 _CACHE_LOCK = threading.Lock()
 _RECEIPT_CACHE_LOCK = threading.Lock()
+_WEB_SEARCH_LOCK = threading.Lock()
+_WEB_SEARCH_RUNNING = False
 _STREAM_END = object()
 logger = logging.getLogger(__name__)
 
@@ -131,9 +133,60 @@ def start_sample_cache_warmup():
             threading.Thread(target=_warm_receipt_cache, daemon=True).start()
 
 
+def _web_search_status():
+    with _WEB_SEARCH_LOCK:
+        return "running" if _WEB_SEARCH_RUNNING else "idle"
+
+
+def _start_wishlist_web_search():
+    global _WEB_SEARCH_RUNNING
+    if not gemini.available() or not wishlist:
+        return False
+    items = [
+        {"item": item["item"], "max_price": item["max_price"]}
+        for item in wishlist
+    ]
+    with _WEB_SEARCH_LOCK:
+        if _WEB_SEARCH_RUNNING:
+            return False
+        _WEB_SEARCH_RUNNING = True
+
+    def research():
+        global _WEB_SEARCH_RUNNING
+        try:
+            deals = gemini.research_wishlist(items)
+            added = add_web_notifications(deals)
+            logger.info("Wishlist background search added %d notifications", len(added))
+        except Exception as error:
+            logger.info(
+                "Wishlist background search skipped after %s",
+                type(error).__name__,
+            )
+        finally:
+            with _WEB_SEARCH_LOCK:
+                _WEB_SEARCH_RUNNING = False
+
+    try:
+        threading.Thread(target=research, daemon=True).start()
+    except Exception as error:
+        with _WEB_SEARCH_LOCK:
+            _WEB_SEARCH_RUNNING = False
+        logger.info(
+            "Wishlist background search could not start after %s",
+            type(error).__name__,
+        )
+        return False
+    return True
+
+
 @app.get("/api/health")
 def health():
-    return {"ok": True, "gemini": gemini.available(), "model": gemini.MODEL}
+    return {
+        "ok": True,
+        "gemini": gemini.available(),
+        "model": gemini.MODEL,
+        "web_search": _web_search_status(),
+    }
 
 
 @app.get("/api/sample")
@@ -242,34 +295,9 @@ def delete_wishlist_item(item_id: str):
 @app.post("/api/wishlist/scan")
 def scan_wishlist():
     added = scan()
-    if not gemini.available() or not wishlist:
-        return added
-    items = [
-        {"item": item["item"], "max_price": item["max_price"]}
-        for item in wishlist
-    ]
-    try:
-        result_queue = queue.Queue()
-
-        def research():
-            try:
-                result_queue.put((True, gemini.research_wishlist(items)))
-            except Exception as error:
-                logger.info(
-                    "Skipping live wishlist search after %s",
-                    type(error).__name__,
-                )
-                result_queue.put((False, []))
-
-        threading.Thread(target=research, daemon=True).start()
-        succeeded, rows = result_queue.get(timeout=25)
-        if succeeded:
-            catalogue_items = {item["wishlist_id"] for item in added}
-            added.extend(add_web_notifications(rows, catalogue_items))
-    except queue.Empty:
-        logger.info("Skipping live wishlist search after timeout")
-    except Exception as error:
-        logger.info("Skipping live wishlist search after %s", type(error).__name__)
+    if gemini.available() and wishlist:
+        if not _start_wishlist_web_search():
+            logger.info("Skipping wishlist search because one is already running")
     return added
 
 

@@ -8,8 +8,20 @@ from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+diagnostic_logger = logging.getLogger("uvicorn.error")
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY) if API_KEY else None
+wishlist_client = (
+    genai.Client(
+        api_key=API_KEY,
+        http_options=types.HttpOptions(
+            timeout=45_000,
+            retry_options=types.HttpRetryOptions(attempts=1),
+        ),
+    )
+    if API_KEY
+    else None
+)
 _EXCLUDED = ("tts", "image", "vision", "embedding", "live", "audio", "native")
 
 
@@ -92,8 +104,11 @@ def _thinking_rejected(error):
     )
 
 
-def _generate_content(model, contents, response_mime_type=None, tools=None):
-    if not client:
+def _generate_content(
+    model, contents, response_mime_type=None, tools=None, request_client=None
+):
+    active_client = request_client or client
+    if not active_client:
         raise RuntimeError("Gemini API key is not configured")
     config = {}
     if response_mime_type:
@@ -105,7 +120,7 @@ def _generate_content(model, contents, response_mime_type=None, tools=None):
     except (AttributeError, TypeError, ValueError):
         config["thinking_config"] = _thinking_config(model, budget=True)
     try:
-        return client.models.generate_content(
+        return active_client.models.generate_content(
             model=model,
             contents=contents,
             config=types.GenerateContentConfig(**config),
@@ -115,7 +130,7 @@ def _generate_content(model, contents, response_mime_type=None, tools=None):
             raise
         logger.warning("Gemini model %s rejected low thinking; retrying with budget", model)
         config["thinking_config"] = _thinking_config(model, budget=True)
-        return client.models.generate_content(
+        return active_client.models.generate_content(
             model=model,
             contents=contents,
             config=types.GenerateContentConfig(**config),
@@ -132,7 +147,7 @@ def ask_json(prompt, parts=None, model=None):
     return json.loads(response.text or "{}")
 
 
-def extract_statement(file_bytes, mime_type, categories):
+def extract_statement(file_bytes, mime_type, categories, model=None):
     part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
     return ask_json(
         'Extract bank transactions from this statement. Return JSON only: '
@@ -142,6 +157,7 @@ def extract_statement(file_bytes, mime_type, categories):
         + ", ".join(categories)
         + ". Amounts must be positive numeric values. Preserve dates and do not invent transactions.",
         [part],
+        model=model,
     )
 
 
@@ -217,7 +233,7 @@ def research_discounts(merchants):
 
 
 def research_wishlist(items):
-    if not client:
+    if not wishlist_client:
         raise RuntimeError("Gemini API key is not configured")
     prompt = (
         "Use Google Search to find currently live UK student deals relevant to these "
@@ -234,14 +250,27 @@ def research_wishlist(items):
         model=MODEL,
         contents=prompt,
         tools=[types.Tool(google_search=types.GoogleSearch())],
+        request_client=wishlist_client,
     )
-    text = re.sub(r"```(?:json)?", "", response.text or "", flags=re.I).replace("```", "")
+    raw_text = response.text or ""
+    candidates = getattr(response, "candidates", None) or []
+    metadata = getattr(candidates[0], "grounding_metadata", None) if candidates else None
+    chunks = getattr(metadata, "grounding_chunks", []) or []
+    diagnostic_logger.info(
+        "Wishlist search response_chars=%d grounding_metadata=%s grounding_chunks=%d",
+        len(raw_text),
+        metadata is not None,
+        len(chunks),
+    )
+    text = re.sub(r"```(?:json)?", "", raw_text, flags=re.I).replace("```", "")
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
         raise ValueError("Wishlist search response did not contain a JSON object")
     result = json.loads(text[start:end + 1])
     deals = result.get("deals", []) if isinstance(result, dict) else []
-    return deals if isinstance(deals, list) else []
+    deals = deals if isinstance(deals, list) else []
+    diagnostic_logger.info("Wishlist search parsed %d deal rows", len(deals))
+    return deals
 
 
 def critique_savings(transactions, savings):
@@ -252,7 +281,7 @@ def critique_savings(transactions, savings):
         + json.dumps(transactions, ensure_ascii=False)
         + " Proposed savings: "
         + json.dumps(savings, ensure_ascii=False),
-        model=FAST_MODEL,
+        model=MODEL,
     )
 
 

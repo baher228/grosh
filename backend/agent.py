@@ -421,11 +421,15 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
 
     started = time.perf_counter()
     start("extract")
+    extract_model = None
     if is_csv:
         transactions = _parse_csv(file_bytes)
     elif use_gemini:
         start("categorise")
-        extracted = gemini.extract_statement(file_bytes, mime_type, CATEGORIES)
+        extract_model = gemini.FAST_MODEL
+        extracted = gemini.extract_statement(
+            file_bytes, mime_type, CATEGORIES, model=extract_model
+        )
         transactions = _normalise_transactions(extracted.get("transactions", []))
         for transaction in transactions:
             category = transaction.pop("_category")
@@ -434,7 +438,10 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
             transaction["category"] = category
     else:
         transactions = []
-    record("extract", "Extract transactions", started, f"{len(transactions)} transactions")
+    extract_detail = f"{len(transactions)} transactions"
+    if extract_model:
+        extract_detail += f" read by {extract_model}"
+    record("extract", "Extract transactions", started, extract_detail)
 
     if use_gemini and not is_csv:
         started = time.perf_counter()
@@ -442,7 +449,7 @@ def _run(file_bytes, filename, is_csv, mime_type, university, notes, catalogue, 
             "categorise",
             "Categorise transactions",
             started,
-            f"categorised during extraction by {gemini.MODEL}",
+            f"categorised during extraction by {extract_model}",
         )
     else:
         started = time.perf_counter()
