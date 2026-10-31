@@ -42,7 +42,7 @@ export function Plan({ a, active, onPick }: { a: Analysis; active: string | null
         <ul className="mt-4 space-y-3">
           {a.savings.map(s => (
             <li key={s.id}>
-              <article onClick={() => onPick(active === s.id ? null : s.id)}
+              <article role="button" tabIndex={0} onClick={() => onPick(active === s.id ? null : s.id)}
                 className={`cursor-pointer rounded-xl border bg-sheet p-4 transition-colors ${active === s.id ? 'border-ink' : 'border-rule hover:border-ink-soft'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
